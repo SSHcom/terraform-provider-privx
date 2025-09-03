@@ -29,8 +29,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-        go-version-file: 'go.mod'
-        cache: false
+          go-version-file: 'go.mod'
+          cache: false
       - run: go mod download
       - run: go build -v .
       - name: Run linters
