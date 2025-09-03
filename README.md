@@ -1,5 +1,3 @@
-[![Tests](https://github.com/kushns/terraform-provider-privx/actions/workflows/test.yml/badge.svg)](https://github.com/kushns/terraform-provider-privx/actions/workflows/test.yml)
-
 # Terraform Provider PrivX (WIP)
 
 This repository is an unofficial terraform provider for PrivX made by the Caascad team.
@@ -75,4 +73,5 @@ In order to run the full suite of Acceptance tests, run `make testacc`.
 ```shell
 make testacc
 ```
+
 
