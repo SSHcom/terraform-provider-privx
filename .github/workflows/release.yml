@@ -23,6 +23,12 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version-file: 'go.mod'
+
+    - name: Import GPG key
+      uses: crazy-max/ghaction-import-gpg@v6
+      with:
+        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.GPG_PASSPHRASE }}
     
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v5
@@ -32,3 +38,4 @@ jobs:
         args: release --clean
       env:
         GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
