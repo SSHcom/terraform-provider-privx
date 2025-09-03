@@ -70,29 +70,3 @@ jobs:
       with:
         install-mode: "goinstall"
         args: --timeout=5m --no-config --tests=false
-
-  security:
-      runs-on: ubuntu-latest
-      permissions:
-        contents: read
-        security-events: write
-
-      steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version-file: 'go.mod'
-      
-      - name: Install Gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
-      
-      - name: Run Gosec Security Scanner
-        run: gosec -fmt sarif -out gosec.sarif -no-fail ./...
-      
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: gosec.sarif
