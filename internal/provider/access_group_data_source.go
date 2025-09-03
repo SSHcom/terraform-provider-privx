@@ -163,6 +163,6 @@ func (d *AccessGroupDataSource) Read(ctx context.Context, req datasource.ReadReq
 	tflog.Debug(ctx, "Storing access group type into the state", map[string]interface{}{
 		"createNewState": fmt.Sprintf("%+v", data),
 	})
-	// Save updated data into Terraform state
+	// Save updated data into Terraform state.
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
