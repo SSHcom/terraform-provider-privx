@@ -32,7 +32,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Set up terraform
-        uses: actions/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v3
         
       - name: Download dependencies
         run: go mod download
