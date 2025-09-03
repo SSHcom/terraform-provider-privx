@@ -1,7 +1,7 @@
 # Terraform Provider PrivX (WIP)
 
 This repository is an unofficial terraform provider for PrivX made by the Caascad team.
-It uses [privx-sdk-go](https://github.com/SSHcom/privx-sdk-go).
+It uses v2 [privx-sdk-go](https://github.com/SSHcom/privx-sdk-go).
 
 ## Using the provider
 
@@ -11,8 +11,8 @@ See examples (`examples/`) and generated documentation (`docs/`),
 
 ### Requirements
 
-- [Terraform](https://www.terraform.io/downloads.html) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.21
+- [Terraform](https://www.terraform.io/downloads.html) >= 1.13
+- [Go](https://golang.org/doc/install) >= 1.25
 
 Optionnal
 - [Nix](https://github.com/NixOS/nix) >= 2.15.0
