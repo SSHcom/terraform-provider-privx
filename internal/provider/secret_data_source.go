@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/vault"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/vault"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -139,20 +139,20 @@ func (d *SecretDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	secret, err := d.client.Secret(data.Name.ValueString())
+	secret, err := d.client.GetSecret(data.Name.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read secret, got error: %s", err))
 		return
 	}
 
 	var allowedRead []RoleRefModel
-	for _, v := range secret.AllowRead {
+	for _, v := range secret.ReadRoles {
 		allowedRead = append(allowedRead, RoleRefModel{types.StringValue(v.ID), types.StringValue(v.Name)})
 	}
 	data.AllowRead = allowedRead
 
 	var allowedWrite []RoleRefModel
-	for _, v := range secret.AllowWrite {
+	for _, v := range secret.WriteRoles {
 		allowedWrite = append(allowedWrite, RoleRefModel{types.StringValue(v.ID), types.StringValue(v.Name)})
 	}
 	data.AllowWrite = allowedWrite
@@ -169,9 +169,9 @@ func (d *SecretDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	data.Data = types.StringValue(string(secretData))
 
 	data.Author = types.StringValue(secret.Author)
-	data.Created = types.StringValue(secret.Created)
-	data.Updated = types.StringValue(secret.Updated)
-	data.UpdatedBy = types.StringValue(secret.Editor)
+	data.Created = types.StringValue(secret.Created.Format("2006-01-02T15:04:05Z07:00"))
+	data.Updated = types.StringValue(secret.Updated.Format("2006-01-02T15:04:05Z07:00"))
+	data.UpdatedBy = types.StringValue(secret.UpdatedBy)
 
 	tflog.Debug(ctx, "Storing secret type into the state", map[string]interface{}{
 		"createNewState": fmt.Sprintf("%+v", data),

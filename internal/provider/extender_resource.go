@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/userstore"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/userstore"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -173,11 +173,11 @@ func (r *ExtenderResource) Create(ctx context.Context, req resource.CreateReques
 	}
 
 	extender := userstore.TrustedClient{
-		Type:            userstore.ClientExtender,
+		Type:            "extender",
 		Name:            data.Name.ValueString(),
 		Enabled:         data.Enabled.ValueBool(),
 		Permissions:     extenderPermissionPayload,
-		AccessGroupId:   data.AccessGroupId.ValueString(),
+		AccessGroupID:   data.AccessGroupId.ValueString(),
 		ExtenderAddress: extenderAddressPayload,
 		Subnets:         extenderSubnetsPayload,
 		RoutingPrefix:   data.RoutingPrefix.ValueString(),
@@ -185,7 +185,7 @@ func (r *ExtenderResource) Create(ctx context.Context, req resource.CreateReques
 
 	tflog.Debug(ctx, fmt.Sprintf("userstore.Extender model used: %+v", extender))
 
-	extenderID, err := r.client.CreateTrustedClient(extender)
+	extenderID, err := r.client.CreateTrustedClient(&extender)
 
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -198,9 +198,9 @@ func (r *ExtenderResource) Create(ctx context.Context, req resource.CreateReques
 
 	// Convert from the API data model to the Terraform data model
 	// and set any unknown attribute values.
-	data.ID = types.StringValue(extenderID)
+	data.ID = types.StringValue(extenderID.ID)
 
-	extenderRead, err := r.client.TrustedClient(data.ID.ValueString())
+	extenderRead, err := r.client.GetTrustedClient(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Read Resource",
@@ -210,7 +210,7 @@ func (r *ExtenderResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 	data.Registered = types.BoolValue(extenderRead.Registered)
-	data.AccessGroupId = types.StringValue(extenderRead.AccessGroupId)
+	data.AccessGroupId = types.StringValue(extenderRead.AccessGroupID)
 	permissions, diags := types.ListValueFrom(ctx, data.Permissions.ElementType(ctx), extenderRead.Permissions)
 	if diags.HasError() {
 		return
@@ -235,7 +235,7 @@ func (r *ExtenderResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	extender, err := r.client.TrustedClient(data.ID.ValueString())
+	extender, err := r.client.GetTrustedClient(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read extender, got error: %s", err))
 		return
@@ -298,10 +298,10 @@ func (r *ExtenderResource) Update(ctx context.Context, req resource.UpdateReques
 	}
 
 	extender := userstore.TrustedClient{
-		Type:            userstore.ClientExtender,
+		Type:            "extender",
 		Name:            data.Name.ValueString(),
 		ExtenderAddress: extenderAddressPayload,
-		AccessGroupId:   data.AccessGroupId.ValueString(),
+		AccessGroupID:   data.AccessGroupId.ValueString(),
 		Subnets:         extenderSubnetsPayload,
 		Enabled:         data.Enabled.ValueBool(),
 		RoutingPrefix:   data.RoutingPrefix.ValueString(),

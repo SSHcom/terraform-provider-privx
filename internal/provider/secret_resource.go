@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/vault"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/rolestore"
+	"github.com/SSHcom/privx-sdk-go/v2/api/vault"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -135,14 +136,20 @@ func (r *SecretResource) Create(ctx context.Context, req resource.CreateRequest,
 		"data": fmt.Sprintf("%+v", data),
 	})
 
-	var readRolesPayload []string
+	var readRolesPayload []rolestore.RoleHandle
 	for _, roleRef := range data.ReadRoles {
-		readRolesPayload = append(readRolesPayload, roleRef.ID.ValueString())
+		readRolesPayload = append(readRolesPayload, rolestore.RoleHandle{
+			ID:   roleRef.ID.ValueString(),
+			Name: roleRef.Name.ValueString(),
+		})
 	}
 
-	var writeRolesPayload []string
+	var writeRolesPayload []rolestore.RoleHandle
 	for _, roleRef := range data.WriteRoles {
-		writeRolesPayload = append(writeRolesPayload, roleRef.ID.ValueString())
+		writeRolesPayload = append(writeRolesPayload, rolestore.RoleHandle{
+			ID:   roleRef.ID.ValueString(),
+			Name: roleRef.Name.ValueString(),
+		})
 	}
 
 	var secretPayload interface{}
@@ -161,7 +168,15 @@ func (r *SecretResource) Create(ctx context.Context, req resource.CreateRequest,
 	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "secret data")
 	tflog.Debug(ctx, "Created secret")
 
-	if err := r.client.CreateSecret(data.Name.ValueString(), readRolesPayload, writeRolesPayload, secretPayload); err != nil {
+	secretData := secretPayload.(map[string]interface{})
+	secretRequest := &vault.SecretRequest{
+		Name:       data.Name.ValueString(),
+		ReadRoles:  readRolesPayload,
+		WriteRoles: writeRolesPayload,
+		Data:       &secretData,
+	}
+	_, err := r.client.CreateSecret(secretRequest)
+	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Resource",
 			"An unexpected error occurred while attempting to create the resource.\n"+
@@ -184,20 +199,20 @@ func (r *SecretResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	secret, err := r.client.Secret(data.Name.ValueString())
+	secret, err := r.client.GetSecret(data.Name.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read secret : %s, got error: %s", data.Name.ValueString(), err))
 		return
 	}
 
 	var allowedRead []RoleRefModel
-	for _, v := range secret.AllowRead {
+	for _, v := range secret.ReadRoles {
 		allowedRead = append(allowedRead, RoleRefModel{types.StringValue(v.ID), types.StringValue(v.Name)})
 	}
 	data.ReadRoles = allowedRead
 
 	var allowedWrite []RoleRefModel
-	for _, v := range secret.AllowWrite {
+	for _, v := range secret.WriteRoles {
 		allowedWrite = append(allowedWrite, RoleRefModel{types.StringValue(v.ID), types.StringValue(v.Name)})
 	}
 	data.WriteRoles = allowedWrite
@@ -232,14 +247,20 @@ func (r *SecretResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	var readRolesPayload []string
+	var readRolesPayload []rolestore.RoleHandle
 	for _, roleRef := range data.ReadRoles {
-		readRolesPayload = append(readRolesPayload, roleRef.ID.ValueString())
+		readRolesPayload = append(readRolesPayload, rolestore.RoleHandle{
+			ID:   roleRef.ID.ValueString(),
+			Name: roleRef.Name.ValueString(),
+		})
 	}
 
-	var writeRolesPayload []string
+	var writeRolesPayload []rolestore.RoleHandle
 	for _, roleRef := range data.WriteRoles {
-		writeRolesPayload = append(writeRolesPayload, roleRef.ID.ValueString())
+		writeRolesPayload = append(writeRolesPayload, rolestore.RoleHandle{
+			ID:   roleRef.ID.ValueString(),
+			Name: roleRef.Name.ValueString(),
+		})
 	}
 
 	var secretPayload interface{}
@@ -254,7 +275,15 @@ func (r *SecretResource) Update(ctx context.Context, req resource.UpdateRequest,
 
 	//If secret change name trigger delete of old secret then recreate
 	if data.Name.ValueString() != name_from_state {
-		if err := r.client.CreateSecret(data.Name.ValueString(), readRolesPayload, writeRolesPayload, secretPayload); err != nil {
+		secretData := secretPayload.(map[string]interface{})
+		secretRequest := &vault.SecretRequest{
+			Name:       data.Name.ValueString(),
+			ReadRoles:  readRolesPayload,
+			WriteRoles: writeRolesPayload,
+			Data:       &secretData,
+		}
+		_, err := r.client.CreateSecret(secretRequest)
+		if err != nil {
 			resp.Diagnostics.AddError(
 				"Unable to Create Resource",
 				"An unexpected error occurred while attempting to create the resource.\n"+
@@ -267,10 +296,17 @@ func (r *SecretResource) Update(ctx context.Context, req resource.UpdateRequest,
 			return
 		}
 	} else {
-		if err := r.client.UpdateSecret(data.Name.ValueString(), readRolesPayload, writeRolesPayload, secretPayload); err != nil {
+		secretData := secretPayload.(map[string]interface{})
+		secretRequest := &vault.SecretRequest{
+			Name:       data.Name.ValueString(),
+			ReadRoles:  readRolesPayload,
+			WriteRoles: writeRolesPayload,
+			Data:       &secretData,
+		}
+		if err := r.client.UpdateSecret(data.Name.ValueString(), secretRequest); err != nil {
 			resp.Diagnostics.AddError(
-				"Unable to Create Resource",
-				"An unexpected error occurred while attempting to create the resource.\n"+
+				"Unable to Update Resource",
+				"An unexpected error occurred while attempting to update the resource.\n"+
 					err.Error(),
 			)
 			return

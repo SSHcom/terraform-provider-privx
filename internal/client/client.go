@@ -3,8 +3,8 @@ package client
 import (
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/oauth"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/oauth"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 )
 
 func authorize(apiBaseURL, bearerToken, apiClientID, apiClientSecret, oauthClientID, oauthClientSecret string) restapi.Authorizer {

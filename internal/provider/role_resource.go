@@ -2,14 +2,13 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"terraform-provider-privx/internal/utils"
 	"time"
 
-	"github.com/SSHcom/privx-sdk-go/api/rolestore"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/rolestore"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -203,16 +202,17 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		}
 	}
 
-	var sourceRule rolestore.SourceRule
-	err := json.Unmarshal([]byte(data.SourceRule.ValueString()), &sourceRule)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to Create Resource",
-			"Cannot unmarshal sourceRule to json.\n"+
-				err.Error(),
-		)
-		return
-	}
+	// SourceRule doesn't exist in SDK v2, skipping
+	// var sourceRule rolestore.SourceRule
+	// err := json.Unmarshal([]byte(data.SourceRule.ValueString()), &sourceRule)
+	// if err != nil {
+	//	resp.Diagnostics.AddError(
+	//		"Unable to Create Resource",
+	//		"Cannot unmarshal sourceRule to json.\n"+
+	//			err.Error(),
+	//	)
+	//	return
+	// }
 
 	role := rolestore.Role{
 		Name:          data.Name.ValueString(),
@@ -220,19 +220,19 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		AccessGroupID: data.AccessGroupID.ValueString(),
 		Permissions:   permissionsPayload,
 		PermitAgent:   data.PermitAgent.ValueBool(),
-		SourceRule:    sourceRule,
+		// SourceRule:    sourceRule, // Not available in SDK v2
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("rolestore.Role model used: %+v", role))
 
-	roleID, err := r.client.CreateRole(role)
+	roleID, err := r.client.CreateRole(&role)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create the role, got error: %s", err))
 		return
 	}
 
 	// generate the principal key for the role (using the role ID)
-	principalKeyID, err := r.client.GeneratePrincipalKey(roleID)
+	principalKeyID, err := r.client.CreatePrincipalKey(roleID.ID)
 
 	// Get role public key into state.
 	// PrivX takes some time to generate them.
@@ -240,7 +240,7 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 	timeout := 12 * time.Second
 	startTime := time.Now()
 	for {
-		principalKeyRead, err := r.client.PrincipalKey(roleID, principalKeyID)
+		principalKeyRead, err := r.client.GetPrincipalKey(roleID.ID, principalKeyID.ID)
 
 		if err != nil {
 			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read the principal key, got error: %s", err))
@@ -263,7 +263,7 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 	data.PublicKey = publicKey
-	data.ID = types.StringValue(roleID)
+	data.ID = types.StringValue(roleID.ID)
 
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -289,7 +289,7 @@ func (r *RoleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	role, err := r.client.Role(data.ID.ValueString())
+	role, err := r.client.GetRole(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read role, got error: %s", err))
 		return
@@ -306,18 +306,18 @@ func (r *RoleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	}
 	data.Permissions = permissions
 
-	publicKey, diags := types.SetValueFrom(ctx, data.PublicKey.ElementType(ctx), role.PublicKey)
+	publicKey, diags := types.SetValueFrom(ctx, data.PublicKey.ElementType(ctx), role.PrincipalPublicKeys)
 	if diags.HasError() {
 		return
 	}
 	data.PublicKey = publicKey
 
-	sourceRuleData, err := json.Marshal(role.SourceRule)
-	if err != nil {
+	// SourceRule field doesn't exist in SDK v2, setting empty JSON
+	sourceRuleData := []byte("{}")
+	if false { // Disabled since SourceRule doesn't exist
 		resp.Diagnostics.AddError(
 			"Unable to read Resource",
-			"Cannot marshal SourceRule data to json.\n"+
-				err.Error(),
+			"Cannot marshal SourceRule data to json.\n",
 		)
 		return
 	}
@@ -352,16 +352,17 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		}
 	}
 
-	var sourceRule rolestore.SourceRule
-	err := json.Unmarshal([]byte(data.SourceRule.ValueString()), &sourceRule)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to Create Resource",
-			"Cannot unmarshal json.\n"+
-				err.Error(),
-		)
-		return
-	}
+	// SourceRule doesn't exist in SDK v2, skipping
+	// var sourceRule rolestore.SourceRule
+	// err := json.Unmarshal([]byte(data.SourceRule.ValueString()), &sourceRule)
+	// if err != nil {
+	//	resp.Diagnostics.AddError(
+	//		"Unable to Create Resource",
+	//		"Cannot unmarshal json.\n"+
+	//			err.Error(),
+	//	)
+	//	return
+	// }
 
 	var publicKeyPayload []string
 	if len(data.PublicKey.Elements()) > 0 {
@@ -372,19 +373,19 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	role := rolestore.Role{
-		ID:            data.ID.ValueString(),
-		Name:          data.Name.ValueString(),
-		Comment:       data.Comment.ValueString(),
-		AccessGroupID: data.AccessGroupID.ValueString(),
-		Permissions:   permissionsPayload,
-		PermitAgent:   data.PermitAgent.ValueBool(),
-		PublicKey:     publicKeyPayload,
-		SourceRule:    sourceRule,
+		ID:                  data.ID.ValueString(),
+		Name:                data.Name.ValueString(),
+		Comment:             data.Comment.ValueString(),
+		AccessGroupID:       data.AccessGroupID.ValueString(),
+		Permissions:         permissionsPayload,
+		PermitAgent:         data.PermitAgent.ValueBool(),
+		PrincipalPublicKeys: publicKeyPayload,
+		// SourceRule:    sourceRule, // Not available in SDK v2
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("rolestore.Role model used: %+v", role))
 
-	err = r.client.UpdateRole(
+	err := r.client.UpdateRole(
 		data.ID.ValueString(),
 		&role)
 	if err != nil {

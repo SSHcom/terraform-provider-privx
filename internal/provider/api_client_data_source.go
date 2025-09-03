@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/userstore"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/userstore"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -126,7 +126,7 @@ func (d *APIClientDataSource) Read(ctx context.Context, req datasource.ReadReque
 		return
 	}
 
-	apiClient, err := d.client.APIClient(data.ID.ValueString())
+	apiClient, err := d.client.GetAPIClient(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read API client, got error: %s", err))
 		return
@@ -145,8 +145,8 @@ func (d *APIClientDataSource) Read(ctx context.Context, req datasource.ReadReque
 	data.Secret = types.StringValue(apiClient.Secret)
 	data.Created = types.StringValue(apiClient.Created)
 	data.Author = types.StringValue(apiClient.Author)
-	data.OAuthClientID = types.StringValue(apiClient.AuthClientID)
-	data.OAuthClientSecret = types.StringValue(apiClient.AuthClientSecret)
+	data.OAuthClientID = types.StringValue(apiClient.OAuthClientID)
+	data.OAuthClientSecret = types.StringValue(apiClient.OAuthClientSecret)
 
 	tflog.Trace(ctx, "read API Client data source")
 

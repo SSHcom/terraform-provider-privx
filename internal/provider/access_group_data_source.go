@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/authorizer"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/authorizer"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework-validators/datasourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -23,7 +23,7 @@ func NewAccessGroupDataSource() datasource.DataSource {
 
 // AccessGroupDataSource defines the data source implementation.
 type AccessGroupDataSource struct {
-	client *authorizer.Client
+	client *authorizer.Authorizer
 }
 
 // AccessGroupDataSourceModel describes the data source data model.
@@ -129,13 +129,13 @@ func (d *AccessGroupDataSource) Read(ctx context.Context, req datasource.ReadReq
 		resp.Diagnostics.AddError("Configuration Error", "Name and Default cannot be null at the same time")
 		return
 	}
-	searchResult, err := d.client.AccessGroups(0, 1000, "id", "ASC")
+	searchResult, err := d.client.GetAccessGroups()
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read access group, got error: %s", err))
 		return
 	}
 	var accessGroup authorizer.AccessGroup
-	for _, result := range searchResult {
+	for _, result := range searchResult.Items {
 		if !data.Name.IsNull() {
 			if result.Name == data.Name.ValueString() {
 				accessGroup = result

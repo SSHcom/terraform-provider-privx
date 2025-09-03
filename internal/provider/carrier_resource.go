@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/userstore"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/userstore"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -207,12 +207,12 @@ func (r *CarrierResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	carrier := userstore.TrustedClient{
-		Type:                          userstore.ClientType(data.Type.ValueString()),
+		Type:                          data.Type.ValueString(),
 		Name:                          data.Name.ValueString(),
 		Enabled:                       data.Enabled.ValueBool(),
 		Permissions:                   permissionPayload,
-		AccessGroupId:                 data.AccessGroupId.ValueString(),
-		GroupId:                       data.GroupID.ValueString(),
+		AccessGroupID:                 data.AccessGroupId.ValueString(),
+		GroupID:                       data.GroupID.ValueString(),
 		ExtenderAddress:               extenderAddressPayload,
 		WebProxyAddress:               data.WebProxyAddress.ValueString(),
 		WebProxyExtenderRoutePatterns: WebProxyExtenderRoutPattersPayload,
@@ -222,7 +222,7 @@ func (r *CarrierResource) Create(ctx context.Context, req resource.CreateRequest
 
 	tflog.Debug(ctx, fmt.Sprintf("userstore.TrustedClient model used: %+v", carrier))
 
-	carrierID, err := r.client.CreateTrustedClient(carrier)
+	carrierID, err := r.client.CreateTrustedClient(&carrier)
 
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -235,9 +235,9 @@ func (r *CarrierResource) Create(ctx context.Context, req resource.CreateRequest
 
 	// Convert from the API data model to the Terraform data model
 	// and set any unknown attribute values.
-	data.ID = types.StringValue(carrierID)
+	data.ID = types.StringValue(carrierID.ID)
 
-	carrierRead, err := r.client.TrustedClient(data.ID.ValueString())
+	carrierRead, err := r.client.GetTrustedClient(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Read Resource",
@@ -247,8 +247,8 @@ func (r *CarrierResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 	data.Registered = types.BoolValue(carrierRead.Registered)
-	data.AccessGroupId = types.StringValue(carrierRead.AccessGroupId)
-	data.GroupID = types.StringValue(carrierRead.GroupId)
+	data.AccessGroupId = types.StringValue(carrierRead.AccessGroupID)
+	data.GroupID = types.StringValue(carrierRead.GroupID)
 	permissions, diags := types.ListValueFrom(ctx, data.Permissions.ElementType(ctx), carrierRead.Permissions)
 	if diags.HasError() {
 		return
@@ -279,7 +279,7 @@ func (r *CarrierResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	carrier, err := r.client.TrustedClient(data.ID.ValueString())
+	carrier, err := r.client.GetTrustedClient(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read carrier, got error: %s", err))
 		return
@@ -352,12 +352,12 @@ func (r *CarrierResource) Update(ctx context.Context, req resource.UpdateRequest
 	permissionPayload := []string{"privx-carrier"}
 
 	carrier := userstore.TrustedClient{
-		Type:                          userstore.ClientType(data.Type.ValueString()),
+		Type:                          data.Type.ValueString(),
 		Name:                          data.Name.ValueString(),
 		Enabled:                       data.Enabled.ValueBool(),
 		Permissions:                   permissionPayload,
-		AccessGroupId:                 data.AccessGroupId.ValueString(),
-		GroupId:                       data.GroupID.ValueString(),
+		AccessGroupID:                 data.AccessGroupId.ValueString(),
+		GroupID:                       data.GroupID.ValueString(),
 		ExtenderAddress:               extenderAddressPayload,
 		WebProxyAddress:               data.WebProxyAddress.ValueString(),
 		WebProxyExtenderRoutePatterns: WebProxyExtenderRoutPattersPayload,

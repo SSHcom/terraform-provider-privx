@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/rolestore"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/rolestore"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -43,8 +43,8 @@ type (
 	}
 
 	EUMModel struct {
-		SourceID           types.String `tfsdk:"source_id"`
-		SourceSeaerchField types.String `tfsdk:"source_search_field"`
+		SourceID          types.String `tfsdk:"source_id"`
+		SourceSearchField types.String `tfsdk:"source_search_field"`
 	}
 
 	// SourceResourceModel describes the resource data model.
@@ -201,10 +201,10 @@ func (r *SourceResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	var externalUserMappingPayload []rolestore.EUM
+	var externalUserMappingPayload []rolestore.UserMapping
 	for _, eum := range data.ExternalUserMapping {
 		externalUserMappingPayload = append(externalUserMappingPayload,
-			rolestore.EUM{SourceID: eum.SourceID.ValueString(), SourceSeaerchField: eum.SourceSeaerchField.ValueString()},
+			rolestore.UserMapping{SourceID: eum.SourceID.ValueString(), SourceSearchField: eum.SourceSearchField.ValueString()},
 		)
 	}
 
@@ -214,7 +214,7 @@ func (r *SourceResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	connectionPayload := rolestore.Connection{
+	connectionPayload := rolestore.SourceConnection{
 		Type:                  "OIDC",
 		Address:               data.OIDCConnection.Address.ValueString(),
 		OIDCEnabled:           data.OIDCConnection.Enabled.ValueBool(),
@@ -223,7 +223,7 @@ func (r *SourceResource) Create(ctx context.Context, req resource.CreateRequest,
 		OIDCClientID:          data.OIDCConnection.ClientID.ValueString(),
 		OIDCClientSecret:      data.OIDCConnection.ClientSecret.ValueString(),
 		OIDCTagsAttributeName: data.OIDCConnection.TagsAttributeName.ValueString(),
-		OIDCScopesSecret:      OIDCAdditionalScopesSecretPayload,
+		OIDCAdditionalScopes:  OIDCAdditionalScopesSecretPayload,
 	}
 
 	source := rolestore.Source{
@@ -237,7 +237,7 @@ func (r *SourceResource) Create(ctx context.Context, req resource.CreateRequest,
 		Connection:          connectionPayload,
 	}
 
-	sourceID, err := r.client.CreateSource(source)
+	sourceID, err := r.client.CreateSource(&source)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Resource",
@@ -250,7 +250,7 @@ func (r *SourceResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	// Convert from the API data model to the Terraform data model
 	// and set any unknown attribute values.
-	data.ID = types.StringValue(sourceID)
+	data.ID = types.StringValue(sourceID.ID)
 
 	tflog.Info(ctx, fmt.Sprintf("data stored: %+v", data))
 
@@ -269,7 +269,7 @@ func (r *SourceResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 
 	// Get the source object from PrivX API
-	source, err := r.client.Source(data.ID.ValueString())
+	source, err := r.client.GetSource(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read source, got error: %s", err))
 		return
@@ -289,10 +289,10 @@ func (r *SourceResource) Read(ctx context.Context, req resource.ReadRequest, res
 	for _, v := range source.ExternalUserMapping {
 		eum = append(eum, &EUMModel{
 			types.StringValue(v.SourceID),
-			types.StringValue(v.SourceSeaerchField)})
+			types.StringValue(v.SourceSearchField)})
 	}
 
-	scopesSecret, diags := types.ListValueFrom(ctx, data.OIDCConnection.ScopesSecret.ElementType(ctx), source.Connection.OIDCScopesSecret)
+	scopesSecret, diags := types.ListValueFrom(ctx, data.OIDCConnection.ScopesSecret.ElementType(ctx), source.Connection.OIDCAdditionalScopes)
 	if diags.HasError() {
 		return
 	}
@@ -345,11 +345,11 @@ func (r *SourceResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	var externalUserMappingPayload []rolestore.EUM
+	var externalUserMappingPayload []rolestore.UserMapping
 	for _, eum := range data.ExternalUserMapping {
 		externalUserMappingPayload = append(
 			externalUserMappingPayload,
-			rolestore.EUM{SourceID: eum.SourceID.ValueString(), SourceSeaerchField: eum.SourceSeaerchField.ValueString()},
+			rolestore.UserMapping{SourceID: eum.SourceID.ValueString(), SourceSearchField: eum.SourceSearchField.ValueString()},
 		)
 	}
 
@@ -359,7 +359,7 @@ func (r *SourceResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	connectionPayload := rolestore.Connection{
+	connectionPayload := rolestore.SourceConnection{
 		Type:                  "OIDC",
 		Address:               data.OIDCConnection.Address.ValueString(),
 		OIDCEnabled:           data.OIDCConnection.Enabled.ValueBool(),
@@ -368,7 +368,7 @@ func (r *SourceResource) Update(ctx context.Context, req resource.UpdateRequest,
 		OIDCClientID:          data.OIDCConnection.ClientID.ValueString(),
 		OIDCClientSecret:      data.OIDCConnection.ClientSecret.ValueString(),
 		OIDCTagsAttributeName: data.OIDCConnection.TagsAttributeName.ValueString(),
-		OIDCScopesSecret:      OIDCAdditionalScopesSecretPayload,
+		OIDCAdditionalScopes:  OIDCAdditionalScopesSecretPayload,
 	}
 
 	source := rolestore.Source{

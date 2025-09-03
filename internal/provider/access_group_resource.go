@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/authorizer"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/authorizer"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -25,7 +25,7 @@ func NewAccessGroupResource() resource.Resource {
 
 // AccessGroupResource defines the resource implementation.
 type AccessGroupResource struct {
-	client *authorizer.Client
+	client *authorizer.Authorizer
 }
 
 // AccessGroup contains PrivX access group information.
@@ -122,7 +122,7 @@ func (r *AccessGroupResource) Create(ctx context.Context, req resource.CreateReq
 
 	// Convert from the API data model to the Terraform data model
 	// and set any unknown attribute values.
-	data.ID = types.StringValue(accessGroupID)
+	data.ID = types.StringValue(accessGroupID.ID)
 
 	// Write logs using the tflog package
 	// Documentation: https://terraform.io/plugin/log
@@ -142,7 +142,7 @@ func (r *AccessGroupResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
-	accessGroup, err := r.client.AccessGroup(data.ID.ValueString())
+	accessGroup, err := r.client.GetAccessGroup(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read access group, got error: %s", err))
 		return

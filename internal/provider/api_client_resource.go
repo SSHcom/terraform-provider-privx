@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/rolestore"
-	"github.com/SSHcom/privx-sdk-go/api/userstore"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/rolestore"
+	"github.com/SSHcom/privx-sdk-go/v2/api/userstore"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -132,12 +132,19 @@ func (r *APIClientResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	var rolesPayload []string
+	var rolesPayload []rolestore.RoleHandle
 	for _, roleRef := range data.Roles {
-		rolesPayload = append(rolesPayload, roleRef.ID.ValueString())
+		rolesPayload = append(rolesPayload, rolestore.RoleHandle{
+			ID: roleRef.ID.ValueString(),
+		})
 	}
 
-	id, err := r.client.CreateAPIClient(data.Name.ValueString(), rolesPayload)
+	apiClientCreate := &userstore.APIClientCreate{
+		Name:  data.Name.ValueString(),
+		Roles: rolesPayload,
+	}
+
+	id, err := r.client.CreateAPIClient(apiClientCreate)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create API client Resource",
@@ -147,7 +154,7 @@ func (r *APIClientResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	api_client, err := r.client.APIClient(id)
+	api_client, err := r.client.GetAPIClient(id.ID)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read api_client, got error: %s", err))
 		return
@@ -155,10 +162,10 @@ func (r *APIClientResource) Create(ctx context.Context, req resource.CreateReque
 
 	// For the purposes of this example code, hardcoding a response value to
 	// save into the Terraform state.
-	data.ID = types.StringValue(id)
+	data.ID = types.StringValue(id.ID)
 	data.Secret = types.StringValue(api_client.Secret)
-	data.OauthClientId = types.StringValue(api_client.AuthClientID)
-	data.OauthClientSecret = types.StringValue(api_client.AuthClientSecret)
+	data.OauthClientId = types.StringValue(api_client.OAuthClientID)
+	data.OauthClientSecret = types.StringValue(api_client.OAuthClientSecret)
 	var roles []RoleRefModel
 	for _, role := range api_client.Roles {
 		roles = append(roles,
@@ -186,7 +193,7 @@ func (r *APIClientResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	apiClient, err := r.client.APIClient(data.ID.ValueString())
+	apiClient, err := r.client.GetAPIClient(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read API client, got error: %s", err))
 		return
@@ -202,8 +209,8 @@ func (r *APIClientResource) Read(ctx context.Context, req resource.ReadRequest, 
 	data.Roles = roles
 	data.Name = types.StringValue(apiClient.Name)
 	data.Secret = types.StringValue(apiClient.Secret)
-	data.OauthClientId = types.StringValue(apiClient.AuthClientID)
-	data.OauthClientSecret = types.StringValue(apiClient.AuthClientSecret)
+	data.OauthClientId = types.StringValue(apiClient.OAuthClientID)
+	data.OauthClientSecret = types.StringValue(apiClient.OAuthClientSecret)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -218,18 +225,18 @@ func (r *APIClientResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	var rolesPayload []rolestore.RoleRef
+	var rolesPayload []rolestore.RoleHandle
 	for _, roleRef := range data.Roles {
 		rolesPayload = append(rolesPayload,
-			rolestore.RoleRef{ID: roleRef.ID.ValueString(), Name: roleRef.Name.ValueString()})
+			rolestore.RoleHandle{ID: roleRef.ID.ValueString(), Name: roleRef.Name.ValueString()})
 	}
 
 	apiClientPayload := userstore.APIClient{
 		ID:               data.ID.ValueString(),
 		Name:             data.Name.ValueString(),
 		Secret:           data.Secret.ValueString(),
-		AuthClientID:     data.OauthClientId.ValueString(),
-		AuthClientSecret: data.OauthClientSecret.ValueString(),
+		OAuthClientID:     data.OauthClientId.ValueString(),
+		OAuthClientSecret: data.OauthClientSecret.ValueString(),
 		Roles:            rolesPayload,
 	}
 

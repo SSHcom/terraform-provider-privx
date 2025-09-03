@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/userstore"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/userstore"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -132,7 +132,7 @@ func (r *WebproxyDataSource) Read(ctx context.Context, req datasource.ReadReques
 		return
 	}
 
-	trustedClientList, err := r.client.TrustedClients()
+	trustedClientList, err := r.client.GetTrustedClients()
 
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read trustedClient list, got error: %s", err))
@@ -142,8 +142,8 @@ func (r *WebproxyDataSource) Read(ctx context.Context, req datasource.ReadReques
 	var Client userstore.TrustedClient
 	found_client := false
 
-	for _, client := range trustedClientList {
-		if client.GroupId == data.GroupId.ValueString() && client.Type == "ICAP" {
+	for _, client := range trustedClientList.Items {
+		if client.GroupID == data.GroupId.ValueString() && client.Type == "ICAP" {
 			found_client = true
 			Client = client
 			break // Arrêtez la boucle dès que vous trouvez la bonne valeur

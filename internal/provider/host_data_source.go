@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/hoststore"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/hoststore"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -603,7 +603,7 @@ func (d *HostDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 
-	host, err := d.client.Host(data.ID.ValueString())
+	host, err := d.client.GetHost(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read host, got error: %s", err))
 		return
@@ -613,25 +613,26 @@ func (d *HostDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	data.ExternalID = types.StringValue(host.ExternalID)
 	data.InstanceID = types.StringValue(host.InstanceID)
 	data.SourceID = types.StringValue(host.SourceID)
-	data.Name = types.StringValue(host.Name)
+	// Note: Host struct doesn't have a Name field in SDK v2
+	data.Name = types.StringValue("")
 	data.Created = types.StringValue(host.Created)
 	data.Updated = types.StringValue(host.Updated)
 	data.UpdatedBy = types.StringValue(host.UpdatedBy)
-	data.ContactAddress = types.StringValue(host.ContactAdress)
+	data.ContactAddress = types.StringValue(host.ContactAddress)
 	data.CloudProvider = types.StringValue(host.CloudProvider)
 	data.CloudProviderRegion = types.StringValue(host.CloudProviderRegion)
 	data.DistinguishedName = types.StringValue(host.DistinguishedName)
 	data.Organization = types.StringValue(host.Organization)
-	data.OrganizationUnit = types.StringValue(host.OrganizationUnit)
+	data.OrganizationUnit = types.StringValue(host.OrganizationalUnit)
 	data.Zone = types.StringValue(host.Zone)
 	data.HostType = types.StringValue(host.HostType)
 	data.HostClassification = types.StringValue(host.HostClassification)
 	data.Comment = types.StringValue(host.Comment)
 	data.Disabled = types.StringValue(host.Disabled)
-	data.Deployable = types.BoolValue(host.Deployable)
-	data.Tofu = types.BoolValue(host.Tofu)
-	data.StandAlone = types.BoolValue(host.Tofu)
-	data.Audit = types.BoolValue(host.Audit)
+	data.Deployable = types.BoolValue(host.Deployable != nil && *host.Deployable)
+	data.Tofu = types.BoolValue(host.Tofu != nil && *host.Tofu)
+	data.StandAlone = types.BoolValue(host.StandAloneHost)
+	data.Audit = types.BoolValue(host.AuditEnabled != nil && *host.AuditEnabled)
 
 	scope, diags := types.SetValueFrom(ctx, data.Scope.ElementType(ctx), host.Scope)
 	if diags.HasError() {
@@ -654,8 +655,8 @@ func (d *HostDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	var status []StatusModel
 	for _, st := range host.Status {
 		status = append(status, StatusModel{
-			K: types.StringValue(st.K),
-			V: types.StringValue(st.V),
+			K: types.StringValue(st.Key),
+			V: types.StringValue(st.Value),
 		})
 	}
 	data.Status = status
@@ -663,8 +664,8 @@ func (d *HostDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	var services []ServiceModel
 	for _, s := range host.Services {
 		services = append(services, ServiceModel{
-			Scheme:  types.StringValue(string(s.Scheme)),
-			Address: types.StringValue(string(s.Address)),
+			Scheme:  types.StringValue(s.Service),
+			Address: types.StringValue(s.Address),
 			Port:    types.Int64Value(int64(s.Port)),
 			// UseForPasswordRotation: types.StringValue(s.UseForPasswordRotation), // FIXME: Not implemented in privx-sdk-go v1.29.0
 		})
@@ -682,7 +683,7 @@ func (d *HostDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		var applications []ApplicationDataSourceModel
 		for _, a := range p.Applications {
 			applications = append(applications, ApplicationDataSourceModel{
-				Name: types.StringValue(a),
+				Name: types.StringValue(a.Name),
 			})
 		}
 		principals = append(principals, PrincipalDataSourceModel{
@@ -700,7 +701,7 @@ func (d *HostDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	data.Principals = principals
 
 	var publickeys []SSHPublicKeyModel
-	for _, pb := range host.PublicKeys {
+	for _, pb := range host.SSHHostPubKeys {
 		publickeys = append(publickeys, SSHPublicKeyModel{
 			Key: types.StringValue(pb.Key),
 		})

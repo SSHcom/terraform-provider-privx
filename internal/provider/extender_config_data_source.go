@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/authorizer"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/authorizer"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -21,7 +21,7 @@ func NewExtenderConfigDataSource() datasource.DataSource {
 
 // ExtenderConfigDataSource defines the DataSource implementation.
 type ExtenderConfigDataSource struct {
-	client    *authorizer.Client
+	client    *authorizer.Authorizer
 	connector *restapi.Connector
 }
 
@@ -86,7 +86,7 @@ func (r *ExtenderConfigDataSource) Read(ctx context.Context, req datasource.Read
 		return
 	}
 
-	DownloadHandle, err := r.client.ExtenderConfigDownloadHandle(data.TrustedClientID.ValueString())
+	DownloadHandle, err := r.client.GetExtenderConfigSessions(data.TrustedClientID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to get extender download sessionid, got error: %s", err))
 		return

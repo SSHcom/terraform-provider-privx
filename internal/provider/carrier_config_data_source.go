@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/authorizer"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/authorizer"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -21,7 +21,7 @@ func NewCarrierConfigDataSource() datasource.DataSource {
 
 // CarrierConfigDataSource defines the DataSource implementation.
 type CarrierConfigDataSource struct {
-	client    *authorizer.Client
+	client    *authorizer.Authorizer
 	connector *restapi.Connector
 }
 
@@ -86,7 +86,7 @@ func (r *CarrierConfigDataSource) Read(ctx context.Context, req datasource.ReadR
 		return
 	}
 
-	DownloadHandle, err := r.client.CarrierConfigDownloadHandle(data.TrustedClientID.ValueString())
+	DownloadHandle, err := r.client.GetCarrierConfigSessions(data.TrustedClientID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to get carrier download sessionid, got error: %s", err))
 		return

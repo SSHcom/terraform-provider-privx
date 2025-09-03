@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SSHcom/privx-sdk-go/api/hoststore"
-	"github.com/SSHcom/privx-sdk-go/api/rolestore"
-	"github.com/SSHcom/privx-sdk-go/restapi"
+	"github.com/SSHcom/privx-sdk-go/v2/api/hoststore"
+	"github.com/SSHcom/privx-sdk-go/v2/api/rolestore"
+	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -706,18 +706,18 @@ func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	var addressesPayload []hoststore.Address
+	var addressesPayload []string
 	resp.Diagnostics.Append(data.Addresses.ElementsAs(ctx, &addressesPayload, false)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var servicesPayload []hoststore.Service
+	var servicesPayload []hoststore.HostService
 	for _, service := range data.Services {
 		servicesPayload = append(servicesPayload,
-			hoststore.Service{
-				Scheme:  hoststore.Scheme(service.Scheme.ValueString()),
-				Address: hoststore.Address(service.Address.ValueString()),
+			hoststore.HostService{
+				Service: service.Scheme.ValueString(),
+				Address: service.Address.ValueString(),
 				Port:    int(service.Port.ValueInt64()),
 				// UseForPasswordRotation: service.UseForPasswordRotation.ValueBool(), // FIXME: Not implemented in privx-sdk-go v1.29.0
 			})
@@ -725,10 +725,10 @@ func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, r
 
 	var principalsPayload []hoststore.Principal
 	for _, principal := range data.Principals {
-		var rolesPayload []rolestore.RoleRef
+		var rolesPayload []rolestore.RoleHandle
 		for _, role := range principal.Roles {
 			rolesPayload = append(rolesPayload,
-				rolestore.RoleRef{
+				rolestore.RoleHandle{
 					ID: role.ID.ValueString(),
 				})
 		}
@@ -755,43 +755,65 @@ func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, r
 			})
 	}
 
-	var publicKeysPayload []hoststore.SSHPublicKey
+	var publicKeysPayload []hoststore.HostSSHPubKeys
 	for _, SSHKey := range data.PublicKeys {
 		publicKeysPayload = append(publicKeysPayload,
-			hoststore.SSHPublicKey{
+			hoststore.HostSSHPubKeys{
 				Key: SSHKey.Key.ValueString(),
 			})
 	}
+
+	// Convert principals to the correct SDK v2 format
+	var principalsSDKPayload []hoststore.HostPrincipals
+	for _, principal := range principalsPayload {
+		var rolesSDK []hoststore.HostRole
+		for _, role := range principal.Roles {
+			rolesSDK = append(rolesSDK, hoststore.HostRole{
+				ID: role.ID,
+			})
+		}
+		principalsSDKPayload = append(principalsSDKPayload, hoststore.HostPrincipals{
+			Principal:      principal.ID,
+			UseUserAccount: principal.UseUserAccount,
+			Passphrase:     principal.Passphrase,
+			Source:         principal.Source,
+			Roles:          rolesSDK,
+		})
+	}
+
+	// Convert boolean values to pointers as required by SDK v2
+	tofuPtr := data.Tofu.ValueBool()
+	auditPtr := data.Audit.ValueBool()
 
 	host := hoststore.Host{
 		AccessGroupID:       data.AccessGroupID.ValueString(),
 		ExternalID:          data.ExternalID.ValueString(),
 		InstanceID:          data.InstanceID.ValueString(),
-		Name:                data.Name.ValueString(),
-		ContactAdress:       data.ContactAddress.ValueString(),
+		CommonName:          data.Name.ValueString(),
+		ContactAddress:      data.ContactAddress.ValueString(),
 		CloudProvider:       data.CloudProvider.ValueString(),
 		CloudProviderRegion: data.CloudProviderRegion.ValueString(),
 		DistinguishedName:   data.DistinguishedName.ValueString(),
 		Organization:        data.Organization.ValueString(),
-		OrganizationUnit:    data.OrganizationUnit.ValueString(),
+		OrganizationalUnit:  data.OrganizationUnit.ValueString(),
 		Zone:                data.Zone.ValueString(),
 		HostType:            data.HostType.ValueString(),
 		HostClassification:  data.HostClassification.ValueString(),
 		Comment:             data.Comment.ValueString(),
-		Tofu:                data.Tofu.ValueBool(),
-		StandAlone:          data.StandAlone.ValueBool(),
-		Audit:               data.Audit.ValueBool(),
+		Tofu:                &tofuPtr,
+		StandAloneHost:      data.StandAlone.ValueBool(),
+		AuditEnabled:        &auditPtr,
 		Scope:               scopePayload,
 		Tags:                tagsPayload,
 		Addresses:           addressesPayload,
 		Services:            servicesPayload,
-		Principals:          principalsPayload,
-		PublicKeys:          publicKeysPayload,
+		Principals:          principalsSDKPayload,
+		SSHHostPubKeys:      publicKeysPayload,
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("hoststore.Host model used: %+v", host))
 
-	hostID, err := r.client.CreateHost(host)
+	hostID, err := r.client.CreateHost(&host)
 
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -804,7 +826,7 @@ func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, r
 
 	// Convert from the API data model to the Terraform data model
 	// and set any unknown attribute values.
-	data.ID = types.StringValue(hostID)
+	data.ID = types.StringValue(hostID.ID)
 
 	// Write logs using the tflog package
 	// Documentation: https://terraform.io/plugin/log
@@ -824,7 +846,7 @@ func (r *HostResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	host, err := r.client.Host(data.ID.ValueString())
+	host, err := r.client.GetHost(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read host, got error: %s", err))
 		return
@@ -833,20 +855,20 @@ func (r *HostResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	data.AccessGroupID = types.StringValue(host.AccessGroupID)
 	data.ExternalID = types.StringValue(host.ExternalID)
 	data.InstanceID = types.StringValue(host.InstanceID)
-	data.Name = types.StringValue(host.Name)
-	data.ContactAddress = types.StringValue(host.ContactAdress)
+	data.Name = types.StringValue(host.CommonName)
+	data.ContactAddress = types.StringValue(host.ContactAddress)
 	data.CloudProvider = types.StringValue(host.CloudProvider)
 	data.CloudProviderRegion = types.StringValue(host.CloudProviderRegion)
 	data.DistinguishedName = types.StringValue(host.DistinguishedName)
 	data.Organization = types.StringValue(host.Organization)
-	data.OrganizationUnit = types.StringValue(host.OrganizationUnit)
+	data.OrganizationUnit = types.StringValue(host.OrganizationalUnit)
 	data.Zone = types.StringValue(host.Zone)
 	data.HostType = types.StringValue(host.HostType)
 	data.HostClassification = types.StringValue(host.HostClassification)
 	data.Comment = types.StringValue(host.Comment)
-	data.Tofu = types.BoolValue(host.Tofu)
-	data.StandAlone = types.BoolValue(host.Tofu)
-	data.Audit = types.BoolValue(host.Audit)
+	data.Tofu = types.BoolValue(*host.Tofu)
+	data.StandAlone = types.BoolValue(host.StandAloneHost)
+	data.Audit = types.BoolValue(*host.AuditEnabled)
 
 	scope, diags := types.SetValueFrom(ctx, data.Scope.ElementType(ctx), host.Scope)
 	if diags.HasError() {
@@ -869,8 +891,8 @@ func (r *HostResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	var services []ServiceModel
 	for _, s := range host.Services {
 		services = append(services, ServiceModel{
-			Scheme:  types.StringValue(string(s.Scheme)),
-			Address: types.StringValue(string(s.Address)),
+			Scheme:  types.StringValue(s.Service),
+			Address: types.StringValue(s.Address),
 			Port:    types.Int64Value(int64(s.Port)),
 			// UseForPasswordRotation: types.StringValue(s.UseForPasswordRotation), // FIXME: Not implemented in privx-sdk-go v1.29.0
 		})
@@ -887,12 +909,12 @@ func (r *HostResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		}
 		var passphrase string
 		for _, dp := range data.Principals {
-			if dp.ID.ValueString() == p.ID {
+			if dp.ID.ValueString() == p.Principal {
 				passphrase = dp.Passphrase.ValueString()
 			}
 		}
 		principals = append(principals, PrincipalModel{
-			ID:             types.StringValue(p.ID),
+			ID:             types.StringValue(p.Principal),
 			Passphrase:     types.StringValue(passphrase),
 			UseUserAccount: types.BoolValue(p.UseUserAccount),
 			// Rotate:     types.BoolValue(p.Rotate), // FIXME: Not implemented in privx-sdk-go v1.29.0
@@ -905,7 +927,7 @@ func (r *HostResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	data.Principals = principals
 
 	var publickeys []SSHPublicKeyModel
-	for _, pb := range host.PublicKeys {
+	for _, pb := range host.SSHHostPubKeys {
 		publickeys = append(publickeys, SSHPublicKeyModel{
 			Key: types.StringValue(pb.Key),
 		})
@@ -941,18 +963,18 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	addressesPayload := make([]hoststore.Address, len(data.Addresses.Elements()))
+	var addressesPayload []string
 	resp.Diagnostics.Append(data.Addresses.ElementsAs(ctx, &addressesPayload, false)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var servicesPayload []hoststore.Service
+	var servicesPayload []hoststore.HostService
 	for _, service := range data.Services {
 		servicesPayload = append(servicesPayload,
-			hoststore.Service{
-				Scheme:  hoststore.Scheme(service.Scheme.ValueString()),
-				Address: hoststore.Address(service.Address.ValueString()),
+			hoststore.HostService{
+				Service: service.Scheme.ValueString(),
+				Address: service.Address.ValueString(),
 				Port:    int(service.Port.ValueInt64()),
 				// UseForPasswordRotation: service.UseForPasswordRotation.ValueBool(), // FIXME: Not implemented in privx-sdk-go v1.29.0
 			})
@@ -960,10 +982,10 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	var principalsPayload []hoststore.Principal
 	for _, principal := range data.Principals {
-		var rolesPayload []rolestore.RoleRef
+		var rolesPayload []rolestore.RoleHandle
 		for _, role := range principal.Roles {
 			rolesPayload = append(rolesPayload,
-				rolestore.RoleRef{
+				rolestore.RoleHandle{
 					ID: role.ID.ValueString(),
 				})
 		}
@@ -988,38 +1010,60 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 			})
 	}
 
-	var publicKeysPayload []hoststore.SSHPublicKey
+	var publicKeysPayload []hoststore.HostSSHPubKeys
 	for _, SSHKey := range data.PublicKeys {
 		publicKeysPayload = append(publicKeysPayload,
-			hoststore.SSHPublicKey{
+			hoststore.HostSSHPubKeys{
 				Key: SSHKey.Key.ValueString(),
 			})
 	}
+
+	// Convert principals to the correct SDK v2 format
+	var principalsSDKPayload []hoststore.HostPrincipals
+	for _, principal := range principalsPayload {
+		var rolesSDK []hoststore.HostRole
+		for _, role := range principal.Roles {
+			rolesSDK = append(rolesSDK, hoststore.HostRole{
+				ID: role.ID,
+			})
+		}
+		principalsSDKPayload = append(principalsSDKPayload, hoststore.HostPrincipals{
+			Principal:      principal.ID,
+			UseUserAccount: principal.UseUserAccount,
+			Passphrase:     principal.Passphrase,
+			Source:         principal.Source,
+			Roles:          rolesSDK,
+		})
+	}
+
+	// Convert boolean values to pointers as required by SDK v2
+	tofuPtr := data.Tofu.ValueBool()
+	auditPtr := data.Audit.ValueBool()
 
 	host := hoststore.Host{
 		AccessGroupID:       data.AccessGroupID.ValueString(),
 		ExternalID:          data.ExternalID.ValueString(),
 		InstanceID:          data.InstanceID.ValueString(),
-		Name:                data.Name.ValueString(),
-		ContactAdress:       data.ContactAddress.ValueString(),
+		CommonName:          data.Name.ValueString(),
+		ContactAddress:      data.ContactAddress.ValueString(),
 		CloudProvider:       data.CloudProvider.ValueString(),
 		CloudProviderRegion: data.CloudProviderRegion.ValueString(),
 		DistinguishedName:   data.DistinguishedName.ValueString(),
 		Organization:        data.Organization.ValueString(),
-		OrganizationUnit:    data.OrganizationUnit.ValueString(),
+		OrganizationalUnit:  data.OrganizationUnit.ValueString(),
 		Zone:                data.Zone.ValueString(),
 		HostType:            data.HostType.ValueString(),
 		HostClassification:  data.HostClassification.ValueString(),
 		Comment:             data.Comment.ValueString(),
-		Tofu:                data.Tofu.ValueBool(),
-		StandAlone:          data.StandAlone.ValueBool(),
-		Audit:               data.Audit.ValueBool(),
+		Tofu:                &tofuPtr,
+		StandAloneHost:      data.StandAlone.ValueBool(),
+		AuditEnabled:        &auditPtr,
 		Scope:               scopePayload,
 		Tags:                tagsPayload,
 		Addresses:           addressesPayload,
 		Services:            servicesPayload,
-		Principals:          principalsPayload,
-		PublicKeys:          publicKeysPayload,
+		Principals:          principalsSDKPayload,
+		SSHHostPubKeys:      publicKeysPayload,
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("hoststore.Host model used: %+v", host))
