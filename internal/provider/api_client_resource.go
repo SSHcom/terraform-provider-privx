@@ -232,12 +232,12 @@ func (r *APIClientResource) Update(ctx context.Context, req resource.UpdateReque
 	}
 
 	apiClientPayload := userstore.APIClient{
-		ID:               data.ID.ValueString(),
-		Name:             data.Name.ValueString(),
-		Secret:           data.Secret.ValueString(),
+		ID:                data.ID.ValueString(),
+		Name:              data.Name.ValueString(),
+		Secret:            data.Secret.ValueString(),
 		OAuthClientID:     data.OauthClientId.ValueString(),
 		OAuthClientSecret: data.OauthClientSecret.ValueString(),
-		Roles:            rolesPayload,
+		Roles:             rolesPayload,
 	}
 
 	if err := r.client.UpdateAPIClient(data.ID.ValueString(), &apiClientPayload); err != nil {
