@@ -213,9 +213,9 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 	err := json.Unmarshal([]byte(data.SourceRule.ValueString()), &sourceRule)
 	if err != nil {
 		resp.Diagnostics.AddError(
-		"Unable to Create Resource",
-		"Cannot unmarshal sourceRule to json.\n"+
-			err.Error(),
+			"Unable to Create Resource",
+			"Cannot unmarshal sourceRule to json.\n"+
+				err.Error(),
 		)
 		return
 	}
@@ -226,7 +226,7 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		AccessGroupID: data.AccessGroupID.ValueString(),
 		Permissions:   permissionsPayload,
 		PermitAgent:   data.PermitAgent.ValueBool(),
-		SourceRules:    sourceRule, // Not available in SDK v2
+		SourceRules:   sourceRule, // Not available in SDK v2
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("rolestore.Role model used: %+v", role))
@@ -386,7 +386,7 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		Permissions:         permissionsPayload,
 		PermitAgent:         data.PermitAgent.ValueBool(),
 		PrincipalPublicKeys: publicKeyPayload,
-		SourceRules:    		 sourceRule, // Not available in SDK v2
+		SourceRules:         sourceRule, // Not available in SDK v2
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("rolestore.Role model used: %+v", role))
