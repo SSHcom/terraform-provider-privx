@@ -1,6 +1,6 @@
 module terraform-provider-privx
 
-go 1.25.0
+go 1.25.1
 
 require (
 	github.com/SSHcom/privx-sdk-go/v2 v2.41.0
