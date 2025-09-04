@@ -320,7 +320,7 @@ func (r *RoleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 
 	// SourceRule field doesn't exist in SDK v2, setting empty JSON
 	sourceRuleData, err := json.Marshal(role.SourceRules)
-	if false { // Disabled since SourceRule doesn't exist
+	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to read Resource",
 			"Cannot marshal SourceRule data to json.\n",
