@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/rolestore"

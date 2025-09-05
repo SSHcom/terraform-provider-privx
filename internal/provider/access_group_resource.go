@@ -89,7 +89,7 @@ func (r *AccessGroupResource) Configure(ctx context.Context, req resource.Config
 }
 
 func (r *AccessGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data AccessGroupResourceModel
+	var data *AccessGroupResourceModel
 
 	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
