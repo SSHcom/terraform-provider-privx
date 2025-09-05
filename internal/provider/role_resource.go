@@ -208,7 +208,6 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		}
 	}
 
-	// SourceRule doesn't exist in SDK v2, skipping
 	var sourceRule rolestore.SourceRule
 	err := json.Unmarshal([]byte(data.SourceRule.ValueString()), &sourceRule)
 	if err != nil {
@@ -226,7 +225,7 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		AccessGroupID: data.AccessGroupID.ValueString(),
 		Permissions:   permissionsPayload,
 		PermitAgent:   data.PermitAgent.ValueBool(),
-		SourceRules:   sourceRule, // Not available in SDK v2
+		SourceRules:   sourceRule,
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("rolestore.Role model used: %+v", role))
@@ -318,7 +317,6 @@ func (r *RoleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	}
 	data.PublicKey = publicKey
 
-	// SourceRule field doesn't exist in SDK v2, setting empty JSON
 	sourceRuleData, err := json.Marshal(role.SourceRules)
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -358,7 +356,6 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		}
 	}
 
-	// SourceRule doesn't exist in SDK v2, skipping
 	var sourceRule rolestore.SourceRule
 	err := json.Unmarshal([]byte(data.SourceRule.ValueString()), &sourceRule)
 	if err != nil {
@@ -386,7 +383,7 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		Permissions:         permissionsPayload,
 		PermitAgent:         data.PermitAgent.ValueBool(),
 		PrincipalPublicKeys: publicKeyPayload,
-		SourceRules:         sourceRule, // Not available in SDK v2
+		SourceRules:         sourceRule,
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("rolestore.Role model used: %+v", role))

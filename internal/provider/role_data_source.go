@@ -144,9 +144,8 @@ func (d *RoleDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	}
 	data.PublicKey = publicKey
 
-	// SourceRule field doesn't exist in SDK v2, setting empty JSON
-	sourceRuleData := []byte("{}")
-	if false { // Disabled since SourceRule doesn't exist
+	sourceRuleData, err := json.Marshal(role.SourceRules)
+	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to read Resource",
 			"Cannot marshal SourceRule data to json.\n",
