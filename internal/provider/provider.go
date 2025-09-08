@@ -297,6 +297,7 @@ func (p *privxProvider) DataSources(ctx context.Context) []func() datasource.Dat
 		NewRoleDataSource,
 		NewSecretDataSource,
 		NewSourceDataSource,
+		NewWorkflowDataSource,
 	}
 }
 
