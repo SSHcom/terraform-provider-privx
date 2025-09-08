@@ -128,6 +128,7 @@ func (d *RoleDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 
+	data.ID = types.StringValue(role.ID)
 	data.Name = types.StringValue(role.Name)
 	data.Comment = types.StringValue(role.Comment)
 	data.AccessGroupID = types.StringValue(role.AccessGroupID)
