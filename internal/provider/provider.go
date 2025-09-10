@@ -282,6 +282,7 @@ func (p *privxProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewSourceResource,
 		NewAPIClientResource,
 		NewCarrierResource,
+		NewWorkflowResource,
 	}
 }
 
@@ -297,6 +298,7 @@ func (p *privxProvider) DataSources(ctx context.Context) []func() datasource.Dat
 		NewRoleDataSource,
 		NewSecretDataSource,
 		NewSourceDataSource,
+		NewWorkflowDataSource,
 	}
 }
 
