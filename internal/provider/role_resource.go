@@ -77,6 +77,8 @@ func (r *RoleResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 			"comment": schema.StringAttribute{
 				MarkdownDescription: "A comment describing the object",
 				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 			},
 			"permissions": schema.SetAttribute{
 				ElementType:         types.StringType,
