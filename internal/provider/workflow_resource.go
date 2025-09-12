@@ -41,12 +41,10 @@ type WorkflowResourceRoleModel struct {
 }
 
 type WorkflowResourceApproverModel struct {
-	ID   types.String               `tfsdk:"id"`
 	Role *WorkflowResourceRoleModel `tfsdk:"role"`
 }
 
 type WorkflowResourceStepModel struct {
-	ID        types.String                    `tfsdk:"id"`
 	Name      types.String                    `tfsdk:"name"`
 	Match     types.String                    `tfsdk:"match"`
 	Approvers []WorkflowResourceApproverModel `tfsdk:"approvers"`
@@ -55,10 +53,6 @@ type WorkflowResourceStepModel struct {
 // WorkflowResourceModel describes the resource data model.
 type WorkflowResourceModel struct {
 	ID                        types.String `tfsdk:"id"`
-	Author                    types.String `tfsdk:"author"`
-	Created                   types.String `tfsdk:"created"`
-	Updated                   types.String `tfsdk:"updated"`
-	UpdatedBy                 types.String `tfsdk:"updated_by"`
 	Name                      types.String `tfsdk:"name"`
 	GrantTypes                types.List   `tfsdk:"grant_types"`
 	MaxTimeRestrictedDuration types.Int64  `tfsdk:"max_time_restricted_duration"`
@@ -89,22 +83,7 @@ func (r *WorkflowResource) Schema(ctx context.Context, req resource.SchemaReques
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"created": schema.StringAttribute{
-				MarkdownDescription: "When the object was created",
-				Computed:            true,
-			},
-			"updated": schema.StringAttribute{
-				MarkdownDescription: "When the object was updated",
-				Computed:            true,
-			},
-			"updated_by": schema.StringAttribute{
-				MarkdownDescription: "ID of the user who updated the object",
-				Computed:            true,
-			},
-			"author": schema.StringAttribute{
-				MarkdownDescription: "ID of the user who originally authored the object",
-				Computed:            true,
-			},
+
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Name of the workflow",
 				Required:            true,
@@ -199,11 +178,6 @@ func (r *WorkflowResource) Schema(ctx context.Context, req resource.SchemaReques
 				Required:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"id": schema.StringAttribute{
-							MarkdownDescription: "Unique identifier of the step",
-							Optional:            true,
-							Computed:            true,
-						},
 						"name": schema.StringAttribute{
 							MarkdownDescription: "Name of the step",
 							Required:            true,
@@ -220,11 +194,6 @@ func (r *WorkflowResource) Schema(ctx context.Context, req resource.SchemaReques
 							Required:            true,
 							NestedObject: schema.NestedAttributeObject{
 								Attributes: map[string]schema.Attribute{
-									"id": schema.StringAttribute{
-										MarkdownDescription: "Unique identifier of the approver",
-										Optional:            true,
-										Computed:            true,
-									},
 									"role": schema.SingleNestedAttribute{
 										MarkdownDescription: "Role assigned to the approver",
 										Required:            true,
@@ -290,10 +259,6 @@ func (r *WorkflowResource) Create(ctx context.Context, req resource.CreateReques
 
 	// Clear read-only fields to prevent them from being included in the update payload
 	data.ID = types.StringNull()
-	data.Author = types.StringNull()
-	data.Created = types.StringNull()
-	data.Updated = types.StringNull()
-	data.UpdatedBy = types.StringNull()
 
 	tflog.Debug(ctx, "Loaded workflow type data", map[string]interface{}{
 		"data": fmt.Sprintf("%+v", data),
@@ -350,7 +315,6 @@ func (r *WorkflowResource) Create(ctx context.Context, req resource.CreateReques
 		var approversPayload []workflow.WorkflowStepApprover
 		for _, approver := range step.Approvers {
 			approversPayload = append(approversPayload, workflow.WorkflowStepApprover{
-				ID: approver.ID.ValueString(),
 				Role: workflow.WorkflowRole{
 					ID:   approver.Role.ID.ValueString(),
 					Name: approver.Role.Name.ValueString(),
@@ -359,7 +323,6 @@ func (r *WorkflowResource) Create(ctx context.Context, req resource.CreateReques
 		}
 
 		stepsPayload = append(stepsPayload, workflow.WorkflowStep{
-			ID:        step.ID.ValueString(),
 			Name:      step.Name.ValueString(),
 			Match:     step.Match.ValueString(),
 			Approvers: approversPayload,
@@ -391,68 +354,7 @@ func (r *WorkflowResource) Create(ctx context.Context, req resource.CreateReques
 
 	data.ID = types.StringValue(workflowID.ID)
 
-	// Read back the created workflow to get computed fields
-	createdWorkflow, err := r.client.GetWorkflow(workflowID.ID)
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read created workflow, got error: %s", err))
-		return
-	}
-
-	// Update computed fields
-	data.Author = types.StringValue(createdWorkflow.Author)
-	data.Created = types.StringValue(createdWorkflow.Created)
-	data.Updated = types.StringValue(createdWorkflow.Updated)
-	data.UpdatedBy = types.StringValue(createdWorkflow.UpdatedBy)
-
-	// Update steps with IDs from the created workflow
-	var stepModels []WorkflowResourceStepModel
-	for _, s := range createdWorkflow.Steps {
-		var approverModels []WorkflowResourceApproverModel
-		for _, a := range s.Approvers {
-			approverModels = append(approverModels, WorkflowResourceApproverModel{
-				ID: types.StringValue(a.ID),
-				Role: &WorkflowResourceRoleModel{
-					ID:   types.StringValue(a.Role.ID),
-					Name: types.StringValue(a.Role.Name),
-				},
-			})
-		}
-
-		stepModels = append(stepModels, WorkflowResourceStepModel{
-			ID:        types.StringValue(s.ID),
-			Name:      types.StringValue(s.Name),
-			Match:     types.StringValue(s.Match),
-			Approvers: approverModels,
-		})
-	}
-
-	stepsSet, diags := types.SetValueFrom(ctx, types.ObjectType{
-		AttrTypes: map[string]attr.Type{
-			"id":    types.StringType,
-			"name":  types.StringType,
-			"match": types.StringType,
-			"approvers": types.SetType{
-				ElemType: types.ObjectType{
-					AttrTypes: map[string]attr.Type{
-						"id": types.StringType,
-						"role": types.ObjectType{
-							AttrTypes: map[string]attr.Type{
-								"id":   types.StringType,
-								"name": types.StringType,
-							},
-						},
-					},
-				},
-			},
-		},
-	}, stepModels)
-
-	if diags.HasError() {
-		resp.Diagnostics.Append(diags...)
-		return
-	}
-
-	data.Steps = stepsSet
+	// Note: Timestamp and internal ID fields are not stored in Terraform state
 
 	tflog.Debug(ctx, "created workflow resource")
 
@@ -476,10 +378,6 @@ func (r *WorkflowResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	data.Author = types.StringValue(workflowData.Author)
-	data.Created = types.StringValue(workflowData.Created)
-	data.Updated = types.StringValue(workflowData.Updated)
-	data.UpdatedBy = types.StringValue(workflowData.UpdatedBy)
 	data.Name = types.StringValue(workflowData.Name)
 	data.Comment = types.StringValue(workflowData.Comment)
 	data.Action = types.StringValue(workflowData.Action)
@@ -496,11 +394,11 @@ func (r *WorkflowResource) Read(ctx context.Context, req resource.ReadRequest, r
 	}
 	data.GrantTypes = grantTypes
 
-	var r_roleModels []WorkflowResourceRoleModel
-	for _, r := range workflowData.RequestorRoles {
-		r_roleModels = append(r_roleModels, WorkflowResourceRoleModel{
-			ID:   types.StringValue(r.ID),
-			Name: types.StringValue(r.Name),
+	var requesterRoleModels []WorkflowResourceRoleModel
+	for _, role := range workflowData.RequestorRoles {
+		requesterRoleModels = append(requesterRoleModels, WorkflowResourceRoleModel{
+			ID:   types.StringValue(role.ID),
+			Name: types.StringValue(role.Name),
 		})
 	}
 
@@ -509,7 +407,7 @@ func (r *WorkflowResource) Read(ctx context.Context, req resource.ReadRequest, r
 			"id":   types.StringType,
 			"name": types.StringType,
 		},
-	}, r_roleModels)
+	}, requesterRoleModels)
 
 	if diags.HasError() {
 		resp.Diagnostics.Append(diags...)
@@ -546,7 +444,6 @@ func (r *WorkflowResource) Read(ctx context.Context, req resource.ReadRequest, r
 		var approverModels []WorkflowResourceApproverModel
 		for _, a := range s.Approvers {
 			approverModels = append(approverModels, WorkflowResourceApproverModel{
-				ID: types.StringValue(a.ID),
 				Role: &WorkflowResourceRoleModel{
 					ID:   types.StringValue(a.Role.ID),
 					Name: types.StringValue(a.Role.Name),
@@ -555,7 +452,6 @@ func (r *WorkflowResource) Read(ctx context.Context, req resource.ReadRequest, r
 		}
 
 		stepModels = append(stepModels, WorkflowResourceStepModel{
-			ID:        types.StringValue(s.ID),
 			Name:      types.StringValue(s.Name),
 			Match:     types.StringValue(s.Match),
 			Approvers: approverModels,
@@ -564,13 +460,11 @@ func (r *WorkflowResource) Read(ctx context.Context, req resource.ReadRequest, r
 
 	stepsSet, diags := types.SetValueFrom(ctx, types.ObjectType{
 		AttrTypes: map[string]attr.Type{
-			"id":    types.StringType,
 			"name":  types.StringType,
 			"match": types.StringType,
 			"approvers": types.SetType{
 				ElemType: types.ObjectType{
 					AttrTypes: map[string]attr.Type{
-						"id": types.StringType,
 						"role": types.ObjectType{
 							AttrTypes: map[string]attr.Type{
 								"id":   types.StringType,
@@ -658,7 +552,6 @@ func (r *WorkflowResource) Update(ctx context.Context, req resource.UpdateReques
 		var approversPayload []workflow.WorkflowStepApprover
 		for _, approver := range step.Approvers {
 			approversPayload = append(approversPayload, workflow.WorkflowStepApprover{
-				ID: approver.ID.ValueString(),
 				Role: workflow.WorkflowRole{
 					ID:   approver.Role.ID.ValueString(),
 					Name: approver.Role.Name.ValueString(),
@@ -667,7 +560,6 @@ func (r *WorkflowResource) Update(ctx context.Context, req resource.UpdateReques
 		}
 
 		stepsPayload = append(stepsPayload, workflow.WorkflowStep{
-			ID:        step.ID.ValueString(),
 			Name:      step.Name.ValueString(),
 			Match:     step.Match.ValueString(),
 			Approvers: approversPayload,
@@ -712,68 +604,7 @@ func (r *WorkflowResource) Update(ctx context.Context, req resource.UpdateReques
 		return
 	}
 
-	// Read back the updated workflow to get the latest computed fields
-	updatedWorkflow, err := r.client.GetWorkflow(data.ID.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read updated workflow, got error: %s", err))
-		return
-	}
-
-	// Update computed fields with the latest values
-	data.Author = types.StringValue(updatedWorkflow.Author)
-	data.Created = types.StringValue(updatedWorkflow.Created)
-	data.Updated = types.StringValue(updatedWorkflow.Updated)
-	data.UpdatedBy = types.StringValue(updatedWorkflow.UpdatedBy)
-
-	// Update steps with the latest IDs from the updated workflow
-	var stepModels []WorkflowResourceStepModel
-	for _, s := range updatedWorkflow.Steps {
-		var approverModels []WorkflowResourceApproverModel
-		for _, a := range s.Approvers {
-			approverModels = append(approverModels, WorkflowResourceApproverModel{
-				ID: types.StringValue(a.ID),
-				Role: &WorkflowResourceRoleModel{
-					ID:   types.StringValue(a.Role.ID),
-					Name: types.StringValue(a.Role.Name),
-				},
-			})
-		}
-
-		stepModels = append(stepModels, WorkflowResourceStepModel{
-			ID:        types.StringValue(s.ID),
-			Name:      types.StringValue(s.Name),
-			Match:     types.StringValue(s.Match),
-			Approvers: approverModels,
-		})
-	}
-
-	stepsSet, diags := types.SetValueFrom(ctx, types.ObjectType{
-		AttrTypes: map[string]attr.Type{
-			"id":    types.StringType,
-			"name":  types.StringType,
-			"match": types.StringType,
-			"approvers": types.SetType{
-				ElemType: types.ObjectType{
-					AttrTypes: map[string]attr.Type{
-						"id": types.StringType,
-						"role": types.ObjectType{
-							AttrTypes: map[string]attr.Type{
-								"id":   types.StringType,
-								"name": types.StringType,
-							},
-						},
-					},
-				},
-			},
-		},
-	}, stepModels)
-
-	if diags.HasError() {
-		resp.Diagnostics.Append(diags...)
-		return
-	}
-
-	data.Steps = stepsSet
+	// Note: Timestamp and internal ID fields are not stored in Terraform state
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

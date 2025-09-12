@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -61,6 +62,8 @@ func (r *AccessGroupResource) Schema(ctx context.Context, req resource.SchemaReq
 			"comment": schema.StringAttribute{
 				MarkdownDescription: "AccessGroup comment",
 				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 			},
 		},
 	}
@@ -168,16 +171,22 @@ func (r *AccessGroupResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	accessGroup := authorizer.AccessGroup{
-		Name:    data.Name.ValueString(),
-		Comment: data.Comment.ValueString(),
+	// Fetch the current access group to preserve read-only fields
+	currentAccessGroup, err := r.client.GetAccessGroup(data.ID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read current access group, got error: %s", err))
+		return
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("authorizer.AccessGroup model used: %+v", accessGroup))
+	// Update only the allowed fields
+	currentAccessGroup.Name = data.Name.ValueString()
+	currentAccessGroup.Comment = data.Comment.ValueString()
 
-	err := r.client.UpdateAccessGroup(
+	tflog.Debug(ctx, fmt.Sprintf("authorizer.AccessGroup model used: %+v", currentAccessGroup))
+
+	err = r.client.UpdateAccessGroup(
 		data.ID.ValueString(),
-		&accessGroup)
+		currentAccessGroup)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update access group, got error: %s", err))
 		return
