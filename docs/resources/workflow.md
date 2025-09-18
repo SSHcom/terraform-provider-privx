@@ -73,11 +73,7 @@ resource "privx_workflow" "qrt-test" {
 
 ### Read-Only
 
-- `author` (String) ID of the user who originally authored the object
-- `created` (String) When the object was created
 - `id` (String) Workflow ID
-- `updated` (String) When the object was updated
-- `updated_by` (String) ID of the user who updated the object
 
 <a id="nestedatt--steps"></a>
 ### Nested Schema for `steps`
@@ -88,20 +84,12 @@ Required:
 - `match` (String) Match condition for the step (e.g., ANY, ALL)
 - `name` (String) Name of the step
 
-Optional:
-
-- `id` (String) Unique identifier of the step
-
 <a id="nestedatt--steps--approvers"></a>
 ### Nested Schema for `steps.approvers`
 
 Required:
 
 - `role` (Attributes) Role assigned to the approver (see [below for nested schema](#nestedatt--steps--approvers--role))
-
-Optional:
-
-- `id` (String) Unique identifier of the approver
 
 <a id="nestedatt--steps--approvers--role"></a>
 ### Nested Schema for `steps.approvers.role`
