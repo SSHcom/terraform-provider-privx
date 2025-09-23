@@ -26,10 +26,10 @@ type WhitelistDataSource struct {
 
 // WhitelistDataSourceModel describes the data source data model.
 type WhitelistDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Comment          types.String `tfsdk:"comment"`
-	Type             types.String `tfsdk:"type"`
+	ID                types.String `tfsdk:"id"`
+	Name              types.String `tfsdk:"name"`
+	Comment           types.String `tfsdk:"comment"`
+	Type              types.String `tfsdk:"type"`
 	WhitelistPatterns types.Set    `tfsdk:"whitelist_patterns"`
 }
 
@@ -110,7 +110,6 @@ func (d *WhitelistDataSource) Read(ctx context.Context, req datasource.ReadReque
 	}
 
 	var whitelist *hoststore.Whitelist
-	var found bool
 
 	// If ID is provided, try to get whitelist by ID first
 	if !data.ID.IsNull() {
@@ -120,7 +119,6 @@ func (d *WhitelistDataSource) Read(ctx context.Context, req datasource.ReadReque
 			return
 		}
 		whitelist = wl
-		found = true
 	} else if !data.Name.IsNull() {
 		// If only name is provided, search through all whitelists
 		searchResult, err := d.client.GetWhitelists()
@@ -129,6 +127,7 @@ func (d *WhitelistDataSource) Read(ctx context.Context, req datasource.ReadReque
 			return
 		}
 
+		var found bool
 		for _, result := range searchResult.Items {
 			if result.Name == data.Name.ValueString() {
 				whitelist = &result

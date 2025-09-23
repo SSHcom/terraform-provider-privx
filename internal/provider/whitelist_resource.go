@@ -32,10 +32,10 @@ type (
 
 	// WhitelistResourceModel describes the resource data model.
 	WhitelistResourceModel struct {
-		ID               types.String `tfsdk:"id"`
-		Name             types.String `tfsdk:"name"`
-		Comment          types.String `tfsdk:"comment"`
-		Type             types.String `tfsdk:"type"`
+		ID                types.String `tfsdk:"id"`
+		Name              types.String `tfsdk:"name"`
+		Comment           types.String `tfsdk:"comment"`
+		Type              types.String `tfsdk:"type"`
 		WhitelistPatterns types.Set    `tfsdk:"whitelist_patterns"`
 	}
 )
