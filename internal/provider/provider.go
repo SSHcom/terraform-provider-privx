@@ -283,6 +283,7 @@ func (p *privxProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewAPIClientResource,
 		NewCarrierResource,
 		NewWorkflowResource,
+		NewWhitelistResource,
 	}
 }
 
@@ -299,6 +300,7 @@ func (p *privxProvider) DataSources(ctx context.Context) []func() datasource.Dat
 		NewSecretDataSource,
 		NewSourceDataSource,
 		NewWorkflowDataSource,
+		NewWhitelistDataSource,
 	}
 }
 
