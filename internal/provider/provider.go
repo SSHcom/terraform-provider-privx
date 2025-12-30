@@ -257,7 +257,17 @@ func (p *privxProvider) Configure(ctx context.Context, req provider.ConfigureReq
 
 	tflog.Debug(ctx, "Creating PrivX client")
 
-	connector, err := client.NewConnector(apiBaseURL, apiBearerToken, apiClientID, apiClientSecret, oauthClientID, oauthClientSecret)
+	// Use connection pool to avoid authentication race conditions
+	config := client.ConnectionConfig{
+		APIBaseURL:        apiBaseURL,
+		BearerToken:       apiBearerToken,
+		APIClientID:       apiClientID,
+		APIClientSecret:   apiClientSecret,
+		OAuthClientID:     oauthClientID,
+		OAuthClientSecret: oauthClientSecret,
+	}
+
+	connector, err := client.GetConnector(config)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to create PrivX client",
@@ -275,13 +285,13 @@ func (p *privxProvider) Configure(ctx context.Context, req provider.ConfigureReq
 func (p *privxProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewAccessGroupResource,
+		NewAPIClientResource,
 		NewExtenderResource,
+		NewCarrierResource,
 		NewHostResource,
 		NewRoleResource,
 		NewSecretResource,
-		NewSourceResource,
-		NewAPIClientResource,
-		NewCarrierResource,
+		//NewSourceResource,
 		NewWorkflowResource,
 		NewWhitelistResource,
 	}
@@ -294,8 +304,10 @@ func (p *privxProvider) DataSources(ctx context.Context) []func() datasource.Dat
 		NewCarrierConfigDataSource,
 		NewExtenderDataSource,
 		NewExtenderConfigDataSource,
-		NewWebproxyConfigDataSource,
-		NewWebproxyDataSource,
+		NewCarrierDataSource,
+		NewHostDataSource,
+		NewWebProxyConfigDataSource,
+		NewWebProxyDataSource,
 		NewRoleDataSource,
 		NewSecretDataSource,
 		NewSourceDataSource,

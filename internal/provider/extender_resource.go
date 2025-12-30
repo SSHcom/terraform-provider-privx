@@ -3,15 +3,17 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/userstore"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -30,19 +32,18 @@ type ExtenderResource struct {
 	client *userstore.UserStore
 }
 
-// Extender contains PrivX extender information.
+// ExtenderResourceModel contains PrivX Extender information.
 type ExtenderResourceModel struct {
 	ID              types.String `tfsdk:"id"`
-	Enabled         types.Bool   `tfsdk:"enabled"`
-	RoutingPrefix   types.String `tfsdk:"routing_prefix"`
 	Name            types.String `tfsdk:"name"`
+	AccessGroupID   types.String `tfsdk:"access_group_id"`
+	Secret          types.String `tfsdk:"secret"`
+	Enabled         types.Bool   `tfsdk:"enabled"`
+	Registered      types.Bool   `tfsdk:"registered"`
 	Permissions     types.List   `tfsdk:"permissions"`
-	WebProxyAddress types.String `tfsdk:"web_proxy_address"`
-	WebProxyPort    types.Int64  `tfsdk:"web_proxy_port"`
+	RoutingPrefix   types.String `tfsdk:"routing_prefix"`
 	ExtenderAddress types.List   `tfsdk:"extender_address"`
 	Subnets         types.List   `tfsdk:"subnets"`
-	Registered      types.Bool   `tfsdk:"registered"`
-	AccessGroupId   types.String `tfsdk:"access_group_id"`
 }
 
 func (r *ExtenderResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -51,8 +52,7 @@ func (r *ExtenderResource) Metadata(ctx context.Context, req resource.MetadataRe
 
 func (r *ExtenderResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Extender resource",
+		MarkdownDescription: "Extender resource for PrivX",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Extender ID",
@@ -61,71 +61,68 @@ func (r *ExtenderResource) Schema(ctx context.Context, req resource.SchemaReques
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"enabled": schema.BoolAttribute{
-				MarkdownDescription: "Extender enabled",
-				Required:            true,
-			},
-			"routing_prefix": schema.StringAttribute{
-				MarkdownDescription: "Routing Prefix",
-				Optional:            true,
-			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Extender name",
 				Required:            true,
 			},
-			"permissions": schema.ListAttribute{
-				ElementType:         types.StringType,
-				MarkdownDescription: "Extender permissions",
-				Computed:            true,
-				PlanModifiers: []planmodifier.List{
-					listplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"web_proxy_address": schema.StringAttribute{
-				MarkdownDescription: "Web Proxy address",
-				Optional:            true,
-			},
-			"web_proxy_port": schema.Int64Attribute{
-				MarkdownDescription: "Web Proxy address",
-				Optional:            true,
-			},
-			"extender_address": schema.ListAttribute{
-				ElementType:         types.StringType,
-				MarkdownDescription: "Extender addresses",
-				Optional:            true,
-			},
-			"subnets": schema.ListAttribute{
-				ElementType:         types.StringType,
-				MarkdownDescription: "Subnets",
-				Optional:            true,
-			},
+
 			"access_group_id": schema.StringAttribute{
 				MarkdownDescription: "Access Group ID",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
+				Default:             stringdefault.StaticString(""),
 			},
-			"registered": schema.BoolAttribute{
-				MarkdownDescription: "Extender registered",
+
+			"secret": schema.StringAttribute{
+				MarkdownDescription: "Client Secret",
 				Computed:            true,
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-				},
+				Sensitive:           true,
+			},
+			"enabled": schema.BoolAttribute{
+				MarkdownDescription: "Whether the Extender is enabled",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(true),
+			},
+			"permissions": schema.ListAttribute{
+				MarkdownDescription: "List of permissions for the Extender",
+				ElementType:         types.StringType,
+				Optional:            true,
+				Computed:            true,
+			},
+			"routing_prefix": schema.StringAttribute{
+				MarkdownDescription: "Routing prefix for the Extender",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"extender_address": schema.ListAttribute{
+				MarkdownDescription: "List of extender addresses",
+				ElementType:         types.StringType,
+				Optional:            true,
+				Computed:            true,
+			},
+			"subnets": schema.ListAttribute{
+				MarkdownDescription: "List of subnets for the Extender",
+				ElementType:         types.StringType,
+				Optional:            true,
+				Computed:            true,
+			},
+
+			"registered": schema.BoolAttribute{
+				MarkdownDescription: "Whether the Extender is registered",
+				Computed:            true,
 			},
 		},
 	}
 }
 
 func (r *ExtenderResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
 
 	connector, ok := req.ProviderData.(*restapi.Connector)
-
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
@@ -133,208 +130,277 @@ func (r *ExtenderResource) Configure(ctx context.Context, req resource.Configure
 		)
 		return
 	}
-	tflog.Debug(ctx, "Creating userstore", map[string]interface{}{
-		"connector : ": fmt.Sprintf("%+v", *connector),
+
+	tflog.Debug(ctx, "Creating userstore client", map[string]interface{}{
+		"connector": fmt.Sprintf("%+v", *connector),
 	})
 
 	r.client = userstore.New(*connector)
 }
 
 func (r *ExtenderResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data ExtenderResourceModel
+	var data *ExtenderResourceModel
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	tflog.Debug(ctx, "Loaded extender type data", map[string]interface{}{
+	tflog.Debug(ctx, "Loaded Extender data", map[string]interface{}{
 		"data": fmt.Sprintf("%+v", data),
 	})
 
-	var extenderPermissionPayload []string
-
-	var extenderAddressPayload []string
-	if len(data.ExtenderAddress.Elements()) > 0 {
-		resp.Diagnostics.Append(data.ExtenderAddress.ElementsAs(ctx, &extenderAddressPayload, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
+	// Convert permissions list to string slice
+	var permissions []string
+	if !data.Permissions.IsNull() && !data.Permissions.IsUnknown() {
+		data.Permissions.ElementsAs(ctx, &permissions, false)
 	}
 
-	var extenderSubnetsPayload []string
-	if len(data.Subnets.Elements()) > 0 {
-		resp.Diagnostics.Append(data.Subnets.ElementsAs(ctx, &extenderSubnetsPayload, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
+	// Convert extender_address list to string slice
+	var extenderAddress []string
+	if !data.ExtenderAddress.IsNull() && !data.ExtenderAddress.IsUnknown() {
+		data.ExtenderAddress.ElementsAs(ctx, &extenderAddress, false)
 	}
 
-	extender := userstore.TrustedClient{
-		Type:            "extender",
+	// Convert subnets list to string slice
+	var subnets []string
+	if !data.Subnets.IsNull() && !data.Subnets.IsUnknown() {
+		data.Subnets.ElementsAs(ctx, &subnets, false)
+	}
+
+	trustedClient := userstore.TrustedClient{
 		Name:            data.Name.ValueString(),
+		Type:            "EXTENDER",
+		AccessGroupID:   data.AccessGroupID.ValueString(),
 		Enabled:         data.Enabled.ValueBool(),
-		Permissions:     extenderPermissionPayload,
-		AccessGroupID:   data.AccessGroupId.ValueString(),
-		ExtenderAddress: extenderAddressPayload,
-		Subnets:         extenderSubnetsPayload,
+		Permissions:     permissions,
 		RoutingPrefix:   data.RoutingPrefix.ValueString(),
+		ExtenderAddress: extenderAddress,
+		Subnets:         subnets,
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("userstore.Extender model used: %+v", extender))
+	tflog.Debug(ctx, fmt.Sprintf("userstore.TrustedClient model used: %+v", trustedClient))
 
-	extenderID, err := r.client.CreateTrustedClient(&extender)
-
+	createdClient, err := r.client.CreateTrustedClient(&trustedClient)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to Create Resource",
-			"An unexpected error occurred while attempting to create the resource.\n"+
+			"Unable to Create Extender",
+			"An unexpected error occurred while attempting to create the Extender.\n"+
 				err.Error(),
 		)
 		return
 	}
 
-	// Convert from the API data model to the Terraform data model
-	// and set any unknown attribute values.
-	data.ID = types.StringValue(extenderID.ID)
+	data.ID = types.StringValue(createdClient.ID)
 
-	extenderRead, err := r.client.GetTrustedClient(data.ID.ValueString())
+	// Read back the created resource to populate all computed fields
+	trustedClientRead, err := r.client.GetTrustedClient(createdClient.ID)
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to Read Resource",
-			"An unexpected error occurred while attempting to read the resource.\n"+
-				err.Error(),
-		)
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read created Extender, got error: %s", err))
 		return
 	}
-	data.Registered = types.BoolValue(extenderRead.Registered)
-	data.AccessGroupId = types.StringValue(extenderRead.AccessGroupID)
-	permissions, diags := types.ListValueFrom(ctx, data.Permissions.ElementType(ctx), extenderRead.Permissions)
-	if diags.HasError() {
-		return
+
+	// Populate all the computed fields from the API response
+	data.Name = types.StringValue(trustedClientRead.Name)
+	data.AccessGroupID = types.StringValue(trustedClientRead.AccessGroupID)
+	data.Secret = types.StringValue(trustedClientRead.Secret)
+	data.Enabled = types.BoolValue(trustedClientRead.Enabled)
+	data.Registered = types.BoolValue(trustedClientRead.Registered)
+	data.RoutingPrefix = types.StringValue(trustedClientRead.RoutingPrefix)
+
+	// Convert permissions slice to list
+	permissionValues := make([]attr.Value, len(trustedClientRead.Permissions))
+	for i, perm := range trustedClientRead.Permissions {
+		permissionValues[i] = types.StringValue(perm)
 	}
-	data.Permissions = permissions
+	data.Permissions = types.ListValueMust(types.StringType, permissionValues)
 
-	// Write logs using the tflog package
-	// Documentation: https://terraform.io/plugin/log
-	tflog.Debug(ctx, "created extender resource")
+	// Convert extender_address slice to list
+	extenderValues := make([]attr.Value, len(trustedClientRead.ExtenderAddress))
+	for i, addr := range trustedClientRead.ExtenderAddress {
+		extenderValues[i] = types.StringValue(addr)
+	}
+	data.ExtenderAddress = types.ListValueMust(types.StringType, extenderValues)
 
-	// Save data into Terraform state
+	// Convert subnets slice to list
+	subnetValues := make([]attr.Value, len(trustedClientRead.Subnets))
+	for i, subnet := range trustedClientRead.Subnets {
+		subnetValues[i] = types.StringValue(subnet)
+	}
+	data.Subnets = types.ListValueMust(types.StringType, subnetValues)
+
+	tflog.Debug(ctx, "created Extender resource")
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *ExtenderResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data *ExtenderResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	extender, err := r.client.GetTrustedClient(data.ID.ValueString())
+	trustedClient, err := r.client.GetTrustedClient(data.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read extender, got error: %s", err))
+		// Log the full error for debugging
+		errorStr := err.Error()
+		tflog.Debug(ctx, "Error reading Extender", map[string]interface{}{
+			"id":    data.ID.ValueString(),
+			"error": errorStr,
+		})
+
+		// Check if the error indicates the resource no longer exists
+		// PrivX may return BAD_REQUEST when a trusted client ID doesn't exist
+		if strings.Contains(errorStr, "NOT_FOUND") ||
+			strings.Contains(errorStr, "404") ||
+			strings.Contains(errorStr, "BAD_REQUEST") {
+			// Resource likely no longer exists, remove from state
+			tflog.Info(ctx, "Extender resource appears to be deleted, removing from state", map[string]interface{}{
+				"id":    data.ID.ValueString(),
+				"error": errorStr,
+			})
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Extender, got error: %s", err))
 		return
 	}
 
-	data.Name = types.StringValue(extender.Name)
-	data.Registered = types.BoolValue(extender.Registered)
-	data.Enabled = types.BoolValue(extender.Enabled)
-	data.RoutingPrefix = types.StringValue(extender.RoutingPrefix)
+	data.Name = types.StringValue(trustedClient.Name)
+	data.AccessGroupID = types.StringValue(trustedClient.AccessGroupID)
+	data.Secret = types.StringValue(trustedClient.Secret)
+	data.Enabled = types.BoolValue(trustedClient.Enabled)
+	data.Registered = types.BoolValue(trustedClient.Registered)
+	data.RoutingPrefix = types.StringValue(trustedClient.RoutingPrefix)
 
-	subnets, diags := types.ListValueFrom(ctx, data.Subnets.ElementType(ctx), extender.Subnets)
-	if diags.HasError() {
-		return
+	// Convert permissions slice to list
+	permissionValues := make([]attr.Value, len(trustedClient.Permissions))
+	for i, perm := range trustedClient.Permissions {
+		permissionValues[i] = types.StringValue(perm)
 	}
-	data.Subnets = subnets
+	data.Permissions = types.ListValueMust(types.StringType, permissionValues)
 
-	permissions, diags := types.ListValueFrom(ctx, data.Permissions.ElementType(ctx), extender.Permissions)
-	if diags.HasError() {
-		return
+	// Convert extender_address slice to list
+	extenderValues := make([]attr.Value, len(trustedClient.ExtenderAddress))
+	for i, addr := range trustedClient.ExtenderAddress {
+		extenderValues[i] = types.StringValue(addr)
 	}
-	data.Permissions = permissions
+	data.ExtenderAddress = types.ListValueMust(types.StringType, extenderValues)
 
-	extenderAddress, diags := types.ListValueFrom(ctx, data.ExtenderAddress.ElementType(ctx), extender.ExtenderAddress)
-	if diags.HasError() {
-		return
+	// Convert subnets slice to list
+	subnetValues := make([]attr.Value, len(trustedClient.Subnets))
+	for i, subnet := range trustedClient.Subnets {
+		subnetValues[i] = types.StringValue(subnet)
 	}
-	data.ExtenderAddress = extenderAddress
+	data.Subnets = types.ListValueMust(types.StringType, subnetValues)
 
-	tflog.Debug(ctx, "Storing extender type into the state", map[string]interface{}{
-		"createNewState": fmt.Sprintf("%+v", data),
+	tflog.Debug(ctx, "Storing Extender into the state", map[string]interface{}{
+		"state": fmt.Sprintf("%+v", data),
 	})
-	// Save updated data into Terraform state
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *ExtenderResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data *ExtenderResourceModel
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var extenderAddressPayload []string
-	if len(data.ExtenderAddress.Elements()) > 0 {
-		resp.Diagnostics.Append(data.ExtenderAddress.ElementsAs(ctx, &extenderAddressPayload, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-	}
-
-	var extenderSubnetsPayload []string
-	if len(data.Subnets.Elements()) > 0 {
-		resp.Diagnostics.Append(data.Subnets.ElementsAs(ctx, &extenderSubnetsPayload, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-	}
-
-	extender := userstore.TrustedClient{
-		Type:            "extender",
-		Name:            data.Name.ValueString(),
-		ExtenderAddress: extenderAddressPayload,
-		AccessGroupID:   data.AccessGroupId.ValueString(),
-		Subnets:         extenderSubnetsPayload,
-		Enabled:         data.Enabled.ValueBool(),
-		RoutingPrefix:   data.RoutingPrefix.ValueString(),
-	}
-
-	tflog.Debug(ctx, fmt.Sprintf("userstore.Extender model used: %+v", extender))
-
-	err := r.client.UpdateTrustedClient(
-		data.ID.ValueString(),
-		&extender)
+	currentClient, err := r.client.GetTrustedClient(data.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update extender, got error: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read current Extender, got error: %s", err))
 		return
 	}
 
-	// Save updated data into Terraform state
+	currentClient.Name = data.Name.ValueString()
+	currentClient.Type = "EXTENDER"
+	currentClient.AccessGroupID = data.AccessGroupID.ValueString()
+	currentClient.Enabled = data.Enabled.ValueBool()
+	currentClient.RoutingPrefix = data.RoutingPrefix.ValueString()
+
+	// Convert permissions list to string slice
+	var permissions []string
+	if !data.Permissions.IsNull() && !data.Permissions.IsUnknown() {
+		data.Permissions.ElementsAs(ctx, &permissions, false)
+	}
+	currentClient.Permissions = permissions
+
+	// Convert extender_address list to string slice
+	var extenderAddress []string
+	if !data.ExtenderAddress.IsNull() && !data.ExtenderAddress.IsUnknown() {
+		data.ExtenderAddress.ElementsAs(ctx, &extenderAddress, false)
+	}
+	currentClient.ExtenderAddress = extenderAddress
+
+	// Convert subnets list to string slice
+	var subnets []string
+	if !data.Subnets.IsNull() && !data.Subnets.IsUnknown() {
+		data.Subnets.ElementsAs(ctx, &subnets, false)
+	}
+	currentClient.Subnets = subnets
+
+	tflog.Debug(ctx, fmt.Sprintf("userstore.TrustedClient model used for update: %+v", currentClient))
+
+	err = r.client.UpdateTrustedClient(data.ID.ValueString(), currentClient)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update Extender, got error: %s", err))
+		return
+	}
+
+	// Read back the updated resource to populate all computed fields
+	trustedClientRead, err := r.client.GetTrustedClient(data.ID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read updated Extender, got error: %s", err))
+		return
+	}
+
+	// Populate all the computed fields from the API response
+	data.Name = types.StringValue(trustedClientRead.Name)
+	data.AccessGroupID = types.StringValue(trustedClientRead.AccessGroupID)
+	data.Secret = types.StringValue(trustedClientRead.Secret)
+	data.Enabled = types.BoolValue(trustedClientRead.Enabled)
+	data.Registered = types.BoolValue(trustedClientRead.Registered)
+	data.RoutingPrefix = types.StringValue(trustedClientRead.RoutingPrefix)
+
+	// Convert permissions slice to list
+	permissionValues := make([]attr.Value, len(trustedClientRead.Permissions))
+	for i, perm := range trustedClientRead.Permissions {
+		permissionValues[i] = types.StringValue(perm)
+	}
+	data.Permissions = types.ListValueMust(types.StringType, permissionValues)
+
+	// Convert extender_address slice to list
+	extenderValues := make([]attr.Value, len(trustedClientRead.ExtenderAddress))
+	for i, addr := range trustedClientRead.ExtenderAddress {
+		extenderValues[i] = types.StringValue(addr)
+	}
+	data.ExtenderAddress = types.ListValueMust(types.StringType, extenderValues)
+
+	// Convert subnets slice to list
+	subnetValues := make([]attr.Value, len(trustedClientRead.Subnets))
+	for i, subnet := range trustedClientRead.Subnets {
+		subnetValues[i] = types.StringValue(subnet)
+	}
+	data.Subnets = types.ListValueMust(types.StringType, subnetValues)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *ExtenderResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var data *ExtenderResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	err := r.client.DeleteTrustedClient(data.ID.ValueString())
-
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete extender, got error: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete Extender, got error: %s", err))
 		return
 	}
 }

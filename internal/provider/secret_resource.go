@@ -2,16 +2,18 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/rolestore"
 	"github.com/SSHcom/privx-sdk-go/v2/api/vault"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
@@ -29,20 +31,25 @@ type SecretResource struct {
 	client *vault.Vault
 }
 
-// SecretResourceModel describes the resource data model.
-type (
-	RoleRefModel struct {
-		ID   types.String `tfsdk:"id"`
-		Name types.String `tfsdk:"name"`
-	}
+// SecretResourceModel contains PrivX secret information.
+type SecretResourceModel struct {
+	Name       types.String `tfsdk:"name"`
+	ReadRoles  types.List   `tfsdk:"read_roles"`
+	WriteRoles types.List   `tfsdk:"write_roles"`
+	Data       types.Map    `tfsdk:"data"`
+	OwnerID    types.String `tfsdk:"owner_id"`
+	Created    types.String `tfsdk:"created"`
+	Updated    types.String `tfsdk:"updated"`
+	UpdatedBy  types.String `tfsdk:"updated_by"`
+	Author     types.String `tfsdk:"author"`
+	Path       types.String `tfsdk:"path"`
+}
 
-	SecretResourceModel struct {
-		Name       types.String   `tfsdk:"name"`
-		Data       types.String   `tfsdk:"data"`
-		ReadRoles  []RoleRefModel `tfsdk:"read_roles"`
-		WriteRoles []RoleRefModel `tfsdk:"write_roles"`
-	}
-)
+// RoleHandleModel represents a role handle
+type RoleHandleModel struct {
+	ID   types.String `tfsdk:"id"`
+	Name types.String `tfsdk:"name"`
+}
 
 func (r *SecretResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_secret"
@@ -50,64 +57,94 @@ func (r *SecretResource) Metadata(ctx context.Context, req resource.MetadataRequ
 
 func (r *SecretResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Secret resource",
+		MarkdownDescription: "PrivX Secret resource",
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
-				MarkdownDescription: "Secret's name",
+				MarkdownDescription: "Secret name (used as identifier)",
 				Required:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
-			"data": schema.StringAttribute{
-				MarkdownDescription: "Secret to be stored",
+			"read_roles": schema.ListNestedAttribute{
+				MarkdownDescription: "List of roles that can read this secret",
+				Optional:            true,
+				Computed:            true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "Role ID",
+							Required:            true,
+						},
+						"name": schema.StringAttribute{
+							MarkdownDescription: "Role name",
+							Optional:            true,
+							Computed:            true,
+						},
+					},
+				},
+			},
+			"write_roles": schema.ListNestedAttribute{
+				MarkdownDescription: "List of roles that can write to this secret",
+				Optional:            true,
+				Computed:            true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							MarkdownDescription: "Role ID",
+							Required:            true,
+						},
+						"name": schema.StringAttribute{
+							MarkdownDescription: "Role name",
+							Optional:            true,
+							Computed:            true,
+						},
+					},
+				},
+			},
+			"data": schema.MapAttribute{
+				MarkdownDescription: "Secret data as key-value pairs",
+				ElementType:         types.StringType,
 				Optional:            true,
 				Computed:            true,
 				Sensitive:           true,
-				Default:             stringdefault.StaticString("{}"),
 			},
-			"read_roles": schema.SetNestedAttribute{
-				MarkdownDescription: "List of roles that can read secret.",
+			"owner_id": schema.StringAttribute{
+				MarkdownDescription: "Owner ID of the secret",
 				Optional:            true,
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"id": schema.StringAttribute{
-							MarkdownDescription: "Role ID",
-							Required:            true,
-						},
-						"name": schema.StringAttribute{
-							MarkdownDescription: "Role name, ignored by server in requests.",
-							Optional:            true,
-						},
-					},
-				},
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 			},
-			"write_roles": schema.SetNestedAttribute{
-				MarkdownDescription: "List of roles that can replace secret.",
-				Optional:            true,
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"id": schema.StringAttribute{
-							MarkdownDescription: "Role ID",
-							Required:            true,
-						},
-						"name": schema.StringAttribute{
-							MarkdownDescription: "Role name, ignored by server in requests.",
-							Optional:            true,
-						},
-					},
-				},
+			"created": schema.StringAttribute{
+				MarkdownDescription: "Creation timestamp",
+				Computed:            true,
+			},
+			"updated": schema.StringAttribute{
+				MarkdownDescription: "Last update timestamp",
+				Computed:            true,
+			},
+			"updated_by": schema.StringAttribute{
+				MarkdownDescription: "ID of user who last updated the secret",
+				Computed:            true,
+			},
+			"author": schema.StringAttribute{
+				MarkdownDescription: "Author of the secret",
+				Computed:            true,
+			},
+			"path": schema.StringAttribute{
+				MarkdownDescription: "Secret path",
+				Computed:            true,
 			},
 		},
 	}
 }
 
 func (r *SecretResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
 
-	connector, ok := req.ProviderData.(*restapi.Connector)
-
+	client, ok := req.ProviderData.(*restapi.Connector)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
@@ -115,229 +152,336 @@ func (r *SecretResource) Configure(ctx context.Context, req resource.ConfigureRe
 		)
 		return
 	}
-	tflog.Debug(ctx, "Creating vault client", map[string]interface{}{
-		"connector : ": fmt.Sprintf("%+v", *connector),
-	})
 
-	r.client = vault.New(*connector)
+	r.client = vault.New(*client)
 }
 
 func (r *SecretResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data SecretResourceModel
+	var data *SecretResourceModel
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	tflog.Debug(ctx, "Loaded secret type data", map[string]interface{}{
-		"data": fmt.Sprintf("%+v", data),
-	})
+	// Convert read roles
+	var readRoles []rolestore.RoleHandle
+	if !data.ReadRoles.IsNull() && !data.ReadRoles.IsUnknown() {
+		var readRoleModels []RoleHandleModel
+		data.ReadRoles.ElementsAs(ctx, &readRoleModels, false)
 
-	var readRolesPayload []rolestore.RoleHandle
-	for _, roleRef := range data.ReadRoles {
-		readRolesPayload = append(readRolesPayload, rolestore.RoleHandle{
-			ID:   roleRef.ID.ValueString(),
-			Name: roleRef.Name.ValueString(),
-		})
+		for _, rm := range readRoleModels {
+			role := rolestore.RoleHandle{
+				ID:   rm.ID.ValueString(),
+				Name: rm.Name.ValueString(),
+			}
+			readRoles = append(readRoles, role)
+		}
 	}
 
-	var writeRolesPayload []rolestore.RoleHandle
-	for _, roleRef := range data.WriteRoles {
-		writeRolesPayload = append(writeRolesPayload, rolestore.RoleHandle{
-			ID:   roleRef.ID.ValueString(),
-			Name: roleRef.Name.ValueString(),
-		})
+	// Convert write roles
+	var writeRoles []rolestore.RoleHandle
+	if !data.WriteRoles.IsNull() && !data.WriteRoles.IsUnknown() {
+		var writeRoleModels []RoleHandleModel
+		data.WriteRoles.ElementsAs(ctx, &writeRoleModels, false)
+
+		for _, rm := range writeRoleModels {
+			role := rolestore.RoleHandle{
+				ID:   rm.ID.ValueString(),
+				Name: rm.Name.ValueString(),
+			}
+			writeRoles = append(writeRoles, role)
+		}
 	}
 
-	var secretPayload interface{}
-	if err := json.Unmarshal([]byte(data.Data.ValueString()), &secretPayload); err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to Create Resource",
-			"Cannot unmarshal secret data json.\n"+
-				err.Error(),
-		)
-		return
+	// Convert secret data
+	var secretData *map[string]interface{}
+	if !data.Data.IsNull() && !data.Data.IsUnknown() {
+		dataMap := make(map[string]string)
+		data.Data.ElementsAs(ctx, &dataMap, false)
+
+		// Convert to interface{} map
+		interfaceMap := make(map[string]interface{})
+		for k, v := range dataMap {
+			interfaceMap[k] = v
+		}
+		secretData = &interfaceMap
 	}
 
-	ctx = tflog.SetField(ctx, "secret name", data.Name.ValueString())
-	ctx = tflog.SetField(ctx, "allowed read", readRolesPayload)
-	ctx = tflog.SetField(ctx, "allowed write", writeRolesPayload)
-	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "secret data")
-	tflog.Debug(ctx, "Created secret")
-
-	secretData := secretPayload.(map[string]interface{})
 	secretRequest := &vault.SecretRequest{
 		Name:       data.Name.ValueString(),
-		ReadRoles:  readRolesPayload,
-		WriteRoles: writeRolesPayload,
-		Data:       &secretData,
+		ReadRoles:  readRoles,
+		WriteRoles: writeRoles,
+		Data:       secretData,
+		OwnerID:    data.OwnerID.ValueString(),
 	}
-	_, err := r.client.CreateSecret(secretRequest)
+
+	tflog.Debug(ctx, "Creating secret", map[string]interface{}{
+		"name": data.Name.ValueString(),
+	})
+
+	created, err := r.client.CreateSecret(secretRequest)
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to Create Resource",
-			"An unexpected error occurred while attempting to create the resource.\n"+
-				err.Error(),
-		)
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create secret, got error: %s", err))
 		return
 	}
 
-	// Save data into Terraform state
+	tflog.Debug(ctx, "Created secret", map[string]interface{}{
+		"name": created.Name,
+	})
+
+	// Read the created secret to get all fields
+	secret, err := r.client.GetSecret(data.Name.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read created secret, got error: %s", err))
+		return
+	}
+
+	r.populateSecretModel(ctx, data, secret)
+
+	tflog.Debug(ctx, "Storing secret into the state", map[string]interface{}{
+		"state": fmt.Sprintf("%+v", data),
+	})
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *SecretResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data *SecretResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	secret, err := r.client.GetSecret(data.Name.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read secret : %s, got error: %s", data.Name.ValueString(), err))
+		// Log the full error for debugging
+		errorStr := err.Error()
+		tflog.Debug(ctx, "Error reading secret", map[string]interface{}{
+			"name":  data.Name.ValueString(),
+			"error": errorStr,
+		})
+
+		// Check if the error indicates the resource no longer exists
+		if contains(errorStr, "NOT_FOUND") ||
+			contains(errorStr, "404") ||
+			contains(errorStr, "BAD_REQUEST") {
+			// Resource likely no longer exists, remove from state
+			tflog.Info(ctx, "Secret resource appears to be deleted, removing from state", map[string]interface{}{
+				"name":  data.Name.ValueString(),
+				"error": errorStr,
+			})
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read secret, got error: %s", err))
 		return
 	}
 
-	var allowedRead []RoleRefModel
-	for _, v := range secret.ReadRoles {
-		allowedRead = append(allowedRead, RoleRefModel{types.StringValue(v.ID), types.StringValue(v.Name)})
-	}
-	data.ReadRoles = allowedRead
+	r.populateSecretModel(ctx, data, secret)
 
-	var allowedWrite []RoleRefModel
-	for _, v := range secret.WriteRoles {
-		allowedWrite = append(allowedWrite, RoleRefModel{types.StringValue(v.ID), types.StringValue(v.Name)})
-	}
-	data.WriteRoles = allowedWrite
-
-	secretData, err := json.Marshal(secret.Data)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to read Resource",
-			"Cannot marshal SourceRule data to json.\n"+
-				err.Error(),
-		)
-		return
-	}
-	data.Data = types.StringValue(string(secretData))
-
-	tflog.Debug(ctx, "Storing secret type into the state", map[string]interface{}{
-		"createNewState": fmt.Sprintf("%+v", data),
+	tflog.Debug(ctx, "Storing secret into the state", map[string]interface{}{
+		"state": fmt.Sprintf("%+v", data),
 	})
-	// Save updated data into Terraform state
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *SecretResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data *SecretResourceModel
-	var name_from_state string
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("name"), &name_from_state)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var readRolesPayload []rolestore.RoleHandle
-	for _, roleRef := range data.ReadRoles {
-		readRolesPayload = append(readRolesPayload, rolestore.RoleHandle{
-			ID:   roleRef.ID.ValueString(),
-			Name: roleRef.Name.ValueString(),
-		})
+	// Convert read roles
+	var readRoles []rolestore.RoleHandle
+	if !data.ReadRoles.IsNull() && !data.ReadRoles.IsUnknown() {
+		var readRoleModels []RoleHandleModel
+		data.ReadRoles.ElementsAs(ctx, &readRoleModels, false)
+
+		for _, rm := range readRoleModels {
+			role := rolestore.RoleHandle{
+				ID:   rm.ID.ValueString(),
+				Name: rm.Name.ValueString(),
+			}
+			readRoles = append(readRoles, role)
+		}
 	}
 
-	var writeRolesPayload []rolestore.RoleHandle
-	for _, roleRef := range data.WriteRoles {
-		writeRolesPayload = append(writeRolesPayload, rolestore.RoleHandle{
-			ID:   roleRef.ID.ValueString(),
-			Name: roleRef.Name.ValueString(),
-		})
+	// Convert write roles
+	var writeRoles []rolestore.RoleHandle
+	if !data.WriteRoles.IsNull() && !data.WriteRoles.IsUnknown() {
+		var writeRoleModels []RoleHandleModel
+		data.WriteRoles.ElementsAs(ctx, &writeRoleModels, false)
+
+		for _, rm := range writeRoleModels {
+			role := rolestore.RoleHandle{
+				ID:   rm.ID.ValueString(),
+				Name: rm.Name.ValueString(),
+			}
+			writeRoles = append(writeRoles, role)
+		}
 	}
 
-	var secretPayload interface{}
-	if err := json.Unmarshal([]byte(data.Data.ValueString()), &secretPayload); err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to Create Resource",
-			"Cannot unmarshal secret data json.\n"+
-				err.Error(),
-		)
+	// Convert secret data
+	var secretData *map[string]interface{}
+	if !data.Data.IsNull() && !data.Data.IsUnknown() {
+		dataMap := make(map[string]string)
+		data.Data.ElementsAs(ctx, &dataMap, false)
+
+		// Convert to interface{} map
+		interfaceMap := make(map[string]interface{})
+		for k, v := range dataMap {
+			interfaceMap[k] = v
+		}
+		secretData = &interfaceMap
+	} else {
+		// If data is null/unknown, read the current secret to preserve existing data
+		currentSecret, err := r.client.GetSecret(data.Name.ValueString())
+		if err == nil && currentSecret.Data != nil {
+			secretData = currentSecret.Data
+		}
+	}
+
+	secretRequest := &vault.SecretRequest{
+		Name:       data.Name.ValueString(),
+		ReadRoles:  readRoles,
+		WriteRoles: writeRoles,
+		Data:       secretData,
+		OwnerID:    data.OwnerID.ValueString(),
+	}
+
+	tflog.Debug(ctx, "Updating secret", map[string]interface{}{
+		"name": data.Name.ValueString(),
+	})
+
+	err := r.client.UpdateSecret(data.Name.ValueString(), secretRequest)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update secret, got error: %s", err))
 		return
 	}
 
-	//If secret change name trigger delete of old secret then recreate
-	if data.Name.ValueString() != name_from_state {
-		secretData := secretPayload.(map[string]interface{})
-		secretRequest := &vault.SecretRequest{
-			Name:       data.Name.ValueString(),
-			ReadRoles:  readRolesPayload,
-			WriteRoles: writeRolesPayload,
-			Data:       &secretData,
-		}
-		_, err := r.client.CreateSecret(secretRequest)
-		if err != nil {
-			resp.Diagnostics.AddError(
-				"Unable to Create Resource",
-				"An unexpected error occurred while attempting to create the resource.\n"+
-					err.Error(),
-			)
-			return
-		}
-		if err := r.client.DeleteSecret(name_from_state); err != nil {
-			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete secret, got error: %s", err))
-			return
-		}
-	} else {
-		secretData := secretPayload.(map[string]interface{})
-		secretRequest := &vault.SecretRequest{
-			Name:       data.Name.ValueString(),
-			ReadRoles:  readRolesPayload,
-			WriteRoles: writeRolesPayload,
-			Data:       &secretData,
-		}
-		if err := r.client.UpdateSecret(data.Name.ValueString(), secretRequest); err != nil {
-			resp.Diagnostics.AddError(
-				"Unable to Update Resource",
-				"An unexpected error occurred while attempting to update the resource.\n"+
-					err.Error(),
-			)
-			return
-		}
+	// Read the updated secret to get all fields
+	secret, err := r.client.GetSecret(data.Name.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read updated secret, got error: %s", err))
+		return
 	}
 
-	ctx = tflog.SetField(ctx, "secret name", data.Name.ValueString())
-	ctx = tflog.SetField(ctx, "allowed read", readRolesPayload)
-	ctx = tflog.SetField(ctx, "allowed write", writeRolesPayload)
-	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "secret data")
-	tflog.Debug(ctx, "Updated secret")
+	r.populateSecretModel(ctx, data, secret)
 
-	// Save updated data into Terraform state
+	tflog.Debug(ctx, "Storing updated secret into the state", map[string]interface{}{
+		"state": fmt.Sprintf("%+v", data),
+	})
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *SecretResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var data *SecretResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	if err := r.client.DeleteSecret(data.Name.ValueString()); err != nil {
+	tflog.Debug(ctx, "Deleting secret", map[string]interface{}{
+		"name": data.Name.ValueString(),
+	})
+
+	err := r.client.DeleteSecret(data.Name.ValueString())
+	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete secret, got error: %s", err))
 		return
 	}
+
+	tflog.Debug(ctx, "Deleted secret", map[string]interface{}{
+		"name": data.Name.ValueString(),
+	})
 }
 
 func (r *SecretResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, resp)
+}
+
+// populateSecretModel populates the Terraform model from the API response
+func (r *SecretResource) populateSecretModel(ctx context.Context, data *SecretResourceModel, secret *vault.Secret) {
+	data.Name = types.StringValue(secret.Name)
+	data.OwnerID = types.StringValue(secret.OwnerID)
+	data.Created = types.StringValue(secret.Created.Format("2006-01-02T15:04:05Z"))
+	data.Updated = types.StringValue(secret.Updated.Format("2006-01-02T15:04:05Z"))
+	data.UpdatedBy = types.StringValue(secret.UpdatedBy)
+	data.Author = types.StringValue(secret.Author)
+	data.Path = types.StringValue(secret.Path)
+
+	// Convert read roles
+	readRoleValues := make([]attr.Value, len(secret.ReadRoles))
+	for i, role := range secret.ReadRoles {
+		roleAttrs := map[string]attr.Value{
+			"id":   types.StringValue(role.ID),
+			"name": types.StringValue(role.Name),
+		}
+		readRoleValues[i] = types.ObjectValueMust(map[string]attr.Type{
+			"id":   types.StringType,
+			"name": types.StringType,
+		}, roleAttrs)
+	}
+	data.ReadRoles = types.ListValueMust(types.ObjectType{
+		AttrTypes: map[string]attr.Type{
+			"id":   types.StringType,
+			"name": types.StringType,
+		},
+	}, readRoleValues)
+
+	// Convert write roles
+	writeRoleValues := make([]attr.Value, len(secret.WriteRoles))
+	for i, role := range secret.WriteRoles {
+		roleAttrs := map[string]attr.Value{
+			"id":   types.StringValue(role.ID),
+			"name": types.StringValue(role.Name),
+		}
+		writeRoleValues[i] = types.ObjectValueMust(map[string]attr.Type{
+			"id":   types.StringType,
+			"name": types.StringType,
+		}, roleAttrs)
+	}
+	data.WriteRoles = types.ListValueMust(types.ObjectType{
+		AttrTypes: map[string]attr.Type{
+			"id":   types.StringType,
+			"name": types.StringType,
+		},
+	}, writeRoleValues)
+
+	// Convert secret data
+	if secret.Data != nil {
+		dataMap := make(map[string]attr.Value)
+		for k, v := range *secret.Data {
+			// Convert interface{} to string
+			if str, ok := v.(string); ok {
+				dataMap[k] = types.StringValue(str)
+			} else {
+				dataMap[k] = types.StringValue(fmt.Sprintf("%v", v))
+			}
+		}
+		data.Data = types.MapValueMust(types.StringType, dataMap)
+	} else {
+		data.Data = types.MapNull(types.StringType)
+	}
+}
+
+// Helper function to check if a string contains a substring (case-insensitive)
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
+			func() bool {
+				for i := 0; i <= len(s)-len(substr); i++ {
+					if s[i:i+len(substr)] == substr {
+						return true
+					}
+				}
+				return false
+			}())))
 }

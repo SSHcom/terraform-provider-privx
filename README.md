@@ -2,12 +2,64 @@
 
 # Terraform Provider PrivX (WIP)
 
-This repository is an unofficial terraform provider for PrivX made by the Caascad team.
+This repository is an unofficial terraform provider for PrivX.
 It uses v2 [privx-sdk-go](https://github.com/SSHcom/privx-sdk-go).
+
+## Supported Resources
+
+### Resources
+- `privx_access_group` - Manage PrivX access groups
+- `privx_api_client` - Manage PrivX API clients for programmatic access
+- `privx_carrier` - Manage PrivX carriers
+- `privx_extender` - Manage PrivX extenders
+- `privx_host` - Manage PrivX hosts
+- `privx_role` - Manage PrivX roles
+- `privx_secret` - Manage PrivX secrets
+- `privx_whitelist` - Manage PrivX whitelists
+- `privx_workflow` - Manage PrivX workflows
+
+### Data Sources
+- `privx_access_group` - Read PrivX access group information
+- `privx_api_client` - Read PrivX API client information
+- `privx_carrier` - Read PrivX carrier information
+- `privx_carrier_config` - Read PrivX carrier configuration
+- `privx_extender` - Read PrivX extender information
+- `privx_extender_config` - Read PrivX extender configuration
+- `privx_host` - Read PrivX host information
+- `privx_role` - Read PrivX role information
+- `privx_secret` - Read PrivX secret information
+- `privx_webproxy` - Read PrivX web proxy information
+- `privx_webproxy_config` - Read PrivX web proxy configuration
+- `privx_whitelist` - Read PrivX whitelist information
+- `privx_workflow` - Read PrivX workflow information
 
 ## Using the provider
 
-See examples (`examples/`) and generated documentation (`docs/`),
+See examples (`examples/`) and generated documentation (`docs/`).
+
+### Example: Managing API Clients
+
+```terraform
+# Create an API client
+resource "privx_api_client" "example" {
+  name = "my-api-client"
+  
+  roles = [
+    {
+      id = "role-id-1"
+    },
+    {
+      id = "role-id-2"
+      name = "role-name-2"
+    }
+  ]
+}
+
+# Read an existing API client
+data "privx_api_client" "existing" {
+  name = "existing-api-client"
+}
+```
 
 ## Development
 
@@ -75,5 +127,6 @@ In order to run the full suite of Acceptance tests, run `make testacc`.
 ```shell
 make testacc
 ```
+
 
 
