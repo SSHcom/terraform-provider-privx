@@ -14,19 +14,19 @@ import (
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
-var _ datasource.DataSource = &WebProxyDataSource{}
+var _ datasource.DataSource = &CarrierDataSource{}
 
-func NewWebProxyDataSource() datasource.DataSource {
-	return &WebProxyDataSource{}
+func NewCarrierDataSource() datasource.DataSource {
+	return &CarrierDataSource{}
 }
 
-// WebProxyDataSource defines the data source implementation.
-type WebProxyDataSource struct {
+// CarrierDataSource defines the data source implementation.
+type CarrierDataSource struct {
 	client *userstore.UserStore
 }
 
-// WebProxyDataSourceModel describes the data source data model.
-type WebProxyDataSourceModel struct {
+// CarrierDataSourceModel describes the data source data model.
+type CarrierDataSourceModel struct {
 	ID                            types.String `tfsdk:"id"`
 	Name                          types.String `tfsdk:"name"`
 	AccessGroupID                 types.String `tfsdk:"access_group_id"`
@@ -42,20 +42,20 @@ type WebProxyDataSourceModel struct {
 	WebProxyExtenderRoutePatterns types.List   `tfsdk:"web_proxy_extender_route_patterns"`
 }
 
-func (d *WebProxyDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_webproxy"
+func (d *CarrierDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_carrier"
 }
 
-func (d *WebProxyDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+func (d *CarrierDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "PrivX WebProxy data source",
+		MarkdownDescription: "PrivX Carrier data source",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "WebProxy UUID",
+				MarkdownDescription: "Carrier UUID",
 				Computed:            true,
 			},
 			"name": schema.StringAttribute{
-				MarkdownDescription: "WebProxy name",
+				MarkdownDescription: "Carrier name",
 				Required:            true,
 			},
 			"access_group_id": schema.StringAttribute{
@@ -63,7 +63,7 @@ func (d *WebProxyDataSource) Schema(ctx context.Context, req datasource.SchemaRe
 				Computed:            true,
 			},
 			"group_id": schema.StringAttribute{
-				MarkdownDescription: "Group ID for the webproxy",
+				MarkdownDescription: "Group ID for the carrier",
 				Computed:            true,
 			},
 			"secret": schema.StringAttribute{
@@ -72,20 +72,20 @@ func (d *WebProxyDataSource) Schema(ctx context.Context, req datasource.SchemaRe
 				Sensitive:           true,
 			},
 			"enabled": schema.BoolAttribute{
-				MarkdownDescription: "Whether the webproxy is enabled",
+				MarkdownDescription: "Whether the carrier is enabled",
 				Computed:            true,
 			},
 			"registered": schema.BoolAttribute{
-				MarkdownDescription: "Whether the webproxy is registered",
+				MarkdownDescription: "Whether the carrier is registered",
 				Computed:            true,
 			},
 			"permissions": schema.ListAttribute{
-				MarkdownDescription: "List of permissions for the webproxy",
+				MarkdownDescription: "List of permissions for the carrier",
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
 			"routing_prefix": schema.StringAttribute{
-				MarkdownDescription: "Routing prefix for the webproxy",
+				MarkdownDescription: "Routing prefix for the carrier",
 				Computed:            true,
 			},
 			"extender_address": schema.ListAttribute{
@@ -94,12 +94,12 @@ func (d *WebProxyDataSource) Schema(ctx context.Context, req datasource.SchemaRe
 				Computed:            true,
 			},
 			"subnets": schema.ListAttribute{
-				MarkdownDescription: "List of subnets for the webproxy",
+				MarkdownDescription: "List of subnets for the carrier",
 				ElementType:         types.StringType,
 				Computed:            true,
 			},
 			"web_proxy_address": schema.StringAttribute{
-				MarkdownDescription: "Web proxy address for the webproxy",
+				MarkdownDescription: "Web proxy address for the carrier",
 				Computed:            true,
 			},
 			"web_proxy_extender_route_patterns": schema.ListAttribute{
@@ -111,7 +111,7 @@ func (d *WebProxyDataSource) Schema(ctx context.Context, req datasource.SchemaRe
 	}
 }
 
-func (d *WebProxyDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+func (d *CarrierDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
@@ -132,8 +132,8 @@ func (d *WebProxyDataSource) Configure(ctx context.Context, req datasource.Confi
 	d.client = userstore.New(*connector)
 }
 
-func (d *WebProxyDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data WebProxyDataSourceModel
+func (d *CarrierDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data CarrierDataSourceModel
 
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
@@ -143,20 +143,20 @@ func (d *WebProxyDataSource) Read(ctx context.Context, req datasource.ReadReques
 	// Get by name - search through all clients
 	searchResult, err := d.client.GetTrustedClients()
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to search webproxies, got error: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to search carriers, got error: %s", err))
 		return
 	}
 
 	var trustedClient *userstore.TrustedClient
 	for _, client := range searchResult.Items {
-		if client.Name == data.Name.ValueString() && client.Type == "ICAP" {
+		if client.Name == data.Name.ValueString() && client.Type == "CARRIER" {
 			trustedClient = &client
 			break
 		}
 	}
 
 	if trustedClient == nil {
-		resp.Diagnostics.AddError("Not Found", fmt.Sprintf("WebProxy with name '%s' not found", data.Name.ValueString()))
+		resp.Diagnostics.AddError("Not Found", fmt.Sprintf("Carrier with name '%s' not found", data.Name.ValueString()))
 		return
 	}
 
@@ -199,7 +199,7 @@ func (d *WebProxyDataSource) Read(ctx context.Context, req datasource.ReadReques
 	}
 	data.WebProxyExtenderRoutePatterns = types.ListValueMust(types.StringType, routePatternValues)
 
-	tflog.Debug(ctx, "Storing webproxy into the state", map[string]interface{}{
+	tflog.Debug(ctx, "Storing carrier into the state", map[string]interface{}{
 		"state": fmt.Sprintf("%+v", data),
 	})
 

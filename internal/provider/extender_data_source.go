@@ -6,6 +6,7 @@ import (
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/userstore"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -19,152 +20,167 @@ func NewExtenderDataSource() datasource.DataSource {
 	return &ExtenderDataSource{}
 }
 
-// ExtenderDataSource defines the DataSource implementation.
+// ExtenderDataSource defines the data source implementation.
 type ExtenderDataSource struct {
 	client *userstore.UserStore
 }
 
-// Extender contains PrivX extender information.
+// ExtenderDataSourceModel describes the data source data model.
 type ExtenderDataSourceModel struct {
 	ID              types.String `tfsdk:"id"`
-	Enabled         types.Bool   `tfsdk:"enabled"`
-	RoutingPrefix   types.String `tfsdk:"routing_prefix"`
 	Name            types.String `tfsdk:"name"`
-	Permissions     types.List   `tfsdk:"permissions"`
+	AccessGroupID   types.String `tfsdk:"access_group_id"`
 	Secret          types.String `tfsdk:"secret"`
-	WebProxyAddress types.String `tfsdk:"web_proxy_address"`
-	WebProxyPort    types.Int64  `tfsdk:"web_proxy_port"`
+	Enabled         types.Bool   `tfsdk:"enabled"`
+	Registered      types.Bool   `tfsdk:"registered"`
+	Permissions     types.List   `tfsdk:"permissions"`
+	RoutingPrefix   types.String `tfsdk:"routing_prefix"`
 	ExtenderAddress types.List   `tfsdk:"extender_address"`
 	Subnets         types.List   `tfsdk:"subnets"`
-	Registered      types.Bool   `tfsdk:"registered"`
 }
 
-func (r *ExtenderDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+func (d *ExtenderDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_extender"
 }
 
-func (r *ExtenderDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+func (d *ExtenderDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Extender DataSource",
+		MarkdownDescription: "Extender data source",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				MarkdownDescription: "Extender ID",
-				Computed:            true,
-			},
-			"enabled": schema.BoolAttribute{
-				MarkdownDescription: "Extender enabled",
-				Computed:            true,
-			},
-			"routing_prefix": schema.StringAttribute{
-				MarkdownDescription: "Routing Prefix",
+				MarkdownDescription: "Extender UUID",
 				Computed:            true,
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Extender name",
 				Required:            true,
 			},
-			"permissions": schema.ListAttribute{
-				ElementType:         types.StringType,
-				MarkdownDescription: "Extender permissions",
+
+			"access_group_id": schema.StringAttribute{
+				MarkdownDescription: "Access Group ID",
 				Computed:            true,
 			},
+
 			"secret": schema.StringAttribute{
-				MarkdownDescription: "Extender secret",
+				MarkdownDescription: "Client Secret",
+				Computed:            true,
 				Sensitive:           true,
+			},
+			"enabled": schema.BoolAttribute{
+				MarkdownDescription: "Whether the Extender is enabled",
 				Computed:            true,
 			},
-			"web_proxy_address": schema.StringAttribute{
-				MarkdownDescription: "Web Proxy address",
+
+			"permissions": schema.ListAttribute{
+				MarkdownDescription: "List of permissions for the Extender",
+				ElementType:         types.StringType,
 				Computed:            true,
 			},
-			"web_proxy_port": schema.Int64Attribute{
-				MarkdownDescription: "Web Proxy address",
+			"routing_prefix": schema.StringAttribute{
+				MarkdownDescription: "Routing prefix for the Extender",
 				Computed:            true,
 			},
 			"extender_address": schema.ListAttribute{
+				MarkdownDescription: "List of extender addresses",
 				ElementType:         types.StringType,
-				MarkdownDescription: "Extender addresses",
 				Computed:            true,
 			},
 			"subnets": schema.ListAttribute{
+				MarkdownDescription: "List of subnets for the Extender",
 				ElementType:         types.StringType,
-				MarkdownDescription: "Subnets",
 				Computed:            true,
 			},
+
 			"registered": schema.BoolAttribute{
-				MarkdownDescription: "Extender registered",
+				MarkdownDescription: "Whether the Extender is registered",
 				Computed:            true,
 			},
 		},
 	}
 }
 
-func (r *ExtenderDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
+func (d *ExtenderDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
 
 	connector, ok := req.ProviderData.(*restapi.Connector)
-
 	if !ok {
 		resp.Diagnostics.AddError(
-			"Unexpected DataSource Configure Type",
+			"Unexpected Data Source Configure Type",
 			fmt.Sprintf("Expected *restapi.Connector, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}
-	tflog.Debug(ctx, "Creating userstore", map[string]interface{}{
-		"connector : ": fmt.Sprintf("%+v", *connector),
+
+	tflog.Debug(ctx, "Creating userstore client", map[string]interface{}{
+		"connector": fmt.Sprintf("%+v", *connector),
 	})
 
-	r.client = userstore.New(*connector)
+	d.client = userstore.New(*connector)
 }
 
-func (r *ExtenderDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data *ExtenderDataSourceModel
+func (d *ExtenderDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data ExtenderDataSourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	extender, err := r.client.GetTrustedClient(data.ID.ValueString())
+	// Get by name - search through all clients
+	searchResult, err := d.client.GetTrustedClients()
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read extender, got error: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to search Extenders, got error: %s", err))
 		return
 	}
 
-	data.Name = types.StringValue(extender.Name)
-	data.Secret = types.StringValue(extender.Secret)
-	data.Registered = types.BoolValue(extender.Registered)
-	data.Enabled = types.BoolValue(extender.Enabled)
-	data.RoutingPrefix = types.StringValue(extender.RoutingPrefix)
+	var trustedClient *userstore.TrustedClient
+	for _, client := range searchResult.Items {
+		if client.Name == data.Name.ValueString() {
+			trustedClient = &client
+			break
+		}
+	}
 
-	subnets, diags := types.ListValueFrom(ctx, data.Subnets.ElementType(ctx), extender.Subnets)
-	if diags.HasError() {
+	if trustedClient == nil {
+		resp.Diagnostics.AddError("Not Found", fmt.Sprintf("Extender with name '%s' not found", data.Name.ValueString()))
 		return
 	}
-	data.Subnets = subnets
 
-	permissions, diags := types.ListValueFrom(ctx, data.Permissions.ElementType(ctx), extender.Permissions)
-	if diags.HasError() {
-		return
+	// Map the API response to the data source model
+	data.ID = types.StringValue(trustedClient.ID)
+	data.Name = types.StringValue(trustedClient.Name)
+	data.AccessGroupID = types.StringValue(trustedClient.AccessGroupID)
+	data.Secret = types.StringValue(trustedClient.Secret)
+	data.Enabled = types.BoolValue(trustedClient.Enabled)
+	data.Registered = types.BoolValue(trustedClient.Registered)
+	data.RoutingPrefix = types.StringValue(trustedClient.RoutingPrefix)
+
+	// Convert permissions slice to list
+	permissionValues := make([]attr.Value, len(trustedClient.Permissions))
+	for i, perm := range trustedClient.Permissions {
+		permissionValues[i] = types.StringValue(perm)
 	}
-	data.Permissions = permissions
+	data.Permissions = types.ListValueMust(types.StringType, permissionValues)
 
-	extenderAddress, diags := types.ListValueFrom(ctx, data.ExtenderAddress.ElementType(ctx), extender.ExtenderAddress)
-	if diags.HasError() {
-		return
+	// Convert extender_address slice to list
+	extenderValues := make([]attr.Value, len(trustedClient.ExtenderAddress))
+	for i, addr := range trustedClient.ExtenderAddress {
+		extenderValues[i] = types.StringValue(addr)
 	}
-	data.ExtenderAddress = extenderAddress
+	data.ExtenderAddress = types.ListValueMust(types.StringType, extenderValues)
 
-	tflog.Debug(ctx, "Storing extender type into the state", map[string]interface{}{
-		"createNewState": fmt.Sprintf("%+v", data),
+	// Convert subnets slice to list
+	subnetValues := make([]attr.Value, len(trustedClient.Subnets))
+	for i, subnet := range trustedClient.Subnets {
+		subnetValues[i] = types.StringValue(subnet)
+	}
+	data.Subnets = types.ListValueMust(types.StringType, subnetValues)
+
+	tflog.Debug(ctx, "Storing Extender into the state", map[string]interface{}{
+		"state": fmt.Sprintf("%+v", data),
 	})
-	// Save updated data into Terraform state
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

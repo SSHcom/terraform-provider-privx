@@ -3,18 +3,53 @@
 page_title: "privx_extender Resource - terraform-provider-privx"
 subcategory: ""
 description: |-
-  Extender resource
+  Trusted Client resource for PrivX
 ---
 
 # privx_extender (Resource)
 
-Extender resource
+Trusted Client resource for PrivX
 
 ## Example Usage
 
 ```terraform
-resource "privx_extender" "extender-test" {
-  name = "dev-provider-extender-test"
+resource "privx_extender" "example" {
+  name           = "example-trusted-client"
+  enabled        = true
+  permissions    = ["privx-extender"]
+  routing_prefix = "example"
+  # Note: When extender_address and subnets are empty, 
+  # the API will set them to ["0.0.0.0/0", "::/0"] by default
+  extender_address = []
+  subnets          = []
+}
+
+# Output the client credentials (be careful with sensitive data)
+output "oauth_client_id" {
+  value = privx_extender.example.oauth_client_id
+}
+
+output "oauth_client_secret" {
+  value     = privx_extender.example.oauth_client_secret
+  sensitive = true
+}
+
+output "client_secret" {
+  value     = privx_extender.example.secret
+  sensitive = true
+}
+
+# Output additional information
+output "client_id" {
+  value = privx_extender.example.id
+}
+
+output "registered" {
+  value = privx_extender.example.registered
+}
+
+output "created" {
+  value = privx_extender.example.created
 }
 ```
 
@@ -23,20 +58,19 @@ resource "privx_extender" "extender-test" {
 
 ### Required
 
-- `enabled` (Boolean) Extender enabled
-- `name` (String) Extender name
+- `name` (String) Trusted Client name
 
 ### Optional
 
 - `access_group_id` (String) Access Group ID
-- `extender_address` (List of String) Extender addresses
-- `routing_prefix` (String) Routing Prefix
-- `subnets` (List of String) Subnets
-- `web_proxy_address` (String) Web Proxy address
-- `web_proxy_port` (Number) Web Proxy address
+- `enabled` (Boolean) Whether the trusted client is enabled
+- `extender_address` (List of String) List of extender addresses
+- `permissions` (List of String) List of permissions for the trusted client
+- `routing_prefix` (String) Routing prefix for the trusted client
+- `subnets` (List of String) List of subnets for the trusted client
 
 ### Read-Only
 
-- `id` (String) Extender ID
-- `permissions` (List of String) Extender permissions
-- `registered` (Boolean) Extender registered
+- `id` (String) Trusted Client ID
+- `registered` (Boolean) Whether the trusted client is registered
+- `secret` (String, Sensitive) Client Secret

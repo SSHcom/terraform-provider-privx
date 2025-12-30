@@ -3,23 +3,22 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/hoststore"
-	"github.com/SSHcom/privx-sdk-go/v2/api/rolestore"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
-	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
@@ -27,153 +26,163 @@ import (
 var _ resource.Resource = &HostResource{}
 var _ resource.ResourceWithImportState = &HostResource{}
 
-type Address types.String
-
 func NewHostResource() resource.Resource {
 	return &HostResource{}
 }
 
-type (
-	// HostResource defines the resource implementation.
-	HostResource struct {
-		client *hoststore.HostStore
-	}
+// HostResource defines the resource implementation.
+type HostResource struct {
+	client *hoststore.HostStore
+}
 
-	ServiceModel struct {
-		Scheme  types.String `tfsdk:"service"`
-		Address types.String `tfsdk:"address"`
-		Port    types.Int64  `tfsdk:"port"`
+// HostResourceModel contains PrivX host information.
+type HostResourceModel struct {
+	ID                      types.String     `tfsdk:"id"`
+	CommonName              types.String     `tfsdk:"common_name"`
+	Addresses               types.List       `tfsdk:"addresses"`
+	ExternalID              types.String     `tfsdk:"external_id"`
+	InstanceID              types.String     `tfsdk:"instance_id"`
+	SourceID                types.String     `tfsdk:"source_id"`
+	AccessGroupID           types.String     `tfsdk:"access_group_id"`
+	CloudProvider           types.String     `tfsdk:"cloud_provider"`
+	CloudProviderRegion     types.String     `tfsdk:"cloud_provider_region"`
+	DistinguishedName       types.String     `tfsdk:"distinguished_name"`
+	Organization            types.String     `tfsdk:"organization"`
+	OrganizationalUnit      types.String     `tfsdk:"organizational_unit"`
+	Zone                    types.String     `tfsdk:"zone"`
+	HostType                types.String     `tfsdk:"host_type"`
+	HostClassification      types.String     `tfsdk:"host_classification"`
+	Comment                 types.String     `tfsdk:"comment"`
+	UserMessage             types.String     `tfsdk:"user_message"`
+	Disabled                types.String     `tfsdk:"disabled"`
+	Deployable              types.Bool       `tfsdk:"deployable"`
+	Tofu                    types.Bool       `tfsdk:"tofu"`
+	Toch                    types.Bool       `tfsdk:"toch"`
+	AuditEnabled            types.Bool       `tfsdk:"audit_enabled"`
+	PasswordRotationEnabled types.Bool       `tfsdk:"password_rotation_enabled"`
+	ContactAddress          types.String     `tfsdk:"contact_address"`
+	Tags                    types.List       `tfsdk:"tags"`
+	Services                []ServiceModel   `tfsdk:"services"`
+	Principals              []PrincipalModel `tfsdk:"principals"`
+	SSHHostPublicKeys       types.List       `tfsdk:"ssh_host_public_keys"`
+	SessionRecordingOptions types.Object     `tfsdk:"session_recording_options"`
+	Created                 types.String     `tfsdk:"created"`
+	Updated                 types.String     `tfsdk:"updated"`
+	UpdatedBy               types.String     `tfsdk:"updated_by"`
+}
 
-		/* FIXME: Not implemented in privx-sdk-go v1.29.0
-		UseForPasswordRotation types.Bool   `tfsdk:"use_for_password_rotation"`
-		*/
-	}
+// ServiceModel represents a host service
+type ServiceModel struct {
+	Service                types.String `tfsdk:"service"`
+	Address                types.String `tfsdk:"address"`
+	Port                   types.Int64  `tfsdk:"port"`
+	UseForPasswordRotation types.Bool   `tfsdk:"use_for_password_rotation"`
+	SSHTunnelPort          types.Int64  `tfsdk:"ssh_tunnel_port"`
+	UsePlaintextVNC        types.Bool   `tfsdk:"use_plaintext_vnc"`
+	Source                 types.String `tfsdk:"source"`
+}
 
-	/* FIXME: Not implemented in privx-sdk-go v1.29.0
-	ApplicationModel struct {
-		Name types.String `tfsdk:"name"`
+// PrincipalModel represents a host principal
+type PrincipalModel struct {
+	Principal              types.String `tfsdk:"principal"`
+	Passphrase             types.String `tfsdk:"passphrase"`
+	Rotate                 types.Bool   `tfsdk:"rotate"`
+	UseForPasswordRotation types.Bool   `tfsdk:"use_for_password_rotation"`
+	UsernameAttribute      types.String `tfsdk:"username_attribute"`
+	UseUserAccount         types.Bool   `tfsdk:"use_user_account"`
+	Source                 types.String `tfsdk:"source"`
+	Roles                  types.List   `tfsdk:"roles"`
+	Applications           types.List   `tfsdk:"applications"`
+	ServiceOptions         types.Object `tfsdk:"service_options"`
+	CommandRestrictions    types.Object `tfsdk:"command_restrictions"`
+}
 
-		Application      types.String `tfsdk:"application"`
-		Arguments        types.String `tfsdk:"arguments"`
-		WorkingDirectory types.String `tfsdk:"working_directory"`
-	}
-	*/
+// RoleModel represents a role reference
+type RoleModel struct {
+	ID   types.String `tfsdk:"id"`
+	Name types.String `tfsdk:"name"`
+}
 
-	SSHServiceModel struct {
-		Shell        types.Bool `tfsdk:"shell"`
-		FileTransfer types.Bool `tfsdk:"file_transfer"`
-		Exec         types.Bool `tfsdk:"exec"`
-		Tunnels      types.Bool `tfsdk:"tunnels"`
-		X11          types.Bool `tfsdk:"x11"`
-		Other        types.Bool `tfsdk:"other"`
-	}
+// SSHHostPublicKeyModel represents an SSH host public key
+type SSHHostPublicKeyModel struct {
+	Key         types.String `tfsdk:"key"`
+	Fingerprint types.String `tfsdk:"fingerprint"`
+}
 
-	RDPServiceModel struct {
-		FileTransfer types.Bool `tfsdk:"file_transfer"`
-		Audio        types.Bool `tfsdk:"audio"`
-		Clipboard    types.Bool `tfsdk:"clipboard"`
-	}
+// ServiceOptionsModel represents service options for a principal
+type ServiceOptionsModel struct {
+	SSH types.Object `tfsdk:"ssh"`
+	RDP types.Object `tfsdk:"rdp"`
+	Web types.Object `tfsdk:"web"`
+	VNC types.Object `tfsdk:"vnc"`
+	DB  types.Object `tfsdk:"db"`
+}
 
-	ServiceOptionsModel struct {
-		SSH SSHServiceModel `tfsdk:"ssh"`
-		RDP RDPServiceModel `tfsdk:"rdp"`
-		Web RDPServiceModel `tfsdk:"Web"` //RDP and Web models are the same
-	}
+// SSHOptionsModel represents SSH service options
+type SSHOptionsModel struct {
+	Shell        types.Bool `tfsdk:"shell"`
+	FileTransfer types.Bool `tfsdk:"file_transfer"`
+	Exec         types.Bool `tfsdk:"exec"`
+	Tunnels      types.Bool `tfsdk:"tunnels"`
+	X11          types.Bool `tfsdk:"x11"`
+	Other        types.Bool `tfsdk:"other"`
+}
 
-	WhitelistModel struct {
-		ID      types.String `tfsdk:"id"`
-		Name    types.String `tfsdk:"name"`
-		Deleted types.Bool   `tfsdk:"deleted"`
-	}
+// RDPOptionsModel represents RDP service options
+type RDPOptionsModel struct {
+	FileTransfer types.Bool `tfsdk:"file_transfer"`
+	Audio        types.Bool `tfsdk:"audio"`
+	Clipboard    types.Bool `tfsdk:"clipboard"`
+}
 
-	/* FIXME: Not implemented in privx-sdk-go v1.29.0
-	CommandRestrictionsModel struct {
-		RShellVariant    types.String     `tfsdk:"rshell_variant"`
-		Banner           types.String     `tfsdk:"banner"`
-		Enabled          types.Bool       `tfsdk:"enabled"`
-		AllowNoMatch     types.Bool       `tfsdk:"allow_no_match"`
-		AuditMatch       types.Bool       `tfsdk:"audit_match"`
-		AuditNoMatch     types.Bool       `tfsdk:"audit_no_match"`
-		DefalutWhitelist WhitelistModel   `tfsdk:"default_whitelist"`
-		Whitelists       []WhitelistModel `tfsdk:"whitelists"`
-	}
-	*/
+// WebOptionsModel represents Web service options
+type WebOptionsModel struct {
+	FileTransfer types.Bool `tfsdk:"file_transfer"`
+	Audio        types.Bool `tfsdk:"audio"`
+	Clipboard    types.Bool `tfsdk:"clipboard"`
+}
 
-	/* FIXME: Not implemented in privx-sdk-go v1.29.0
-	PasswordRotationModel struct {
-		OperatingSystem  types.String `tfsdk:"operating_system"`
-		WINRMAddress     types.String `tfsdk:"winrm_address"`
-		WINRMPort        types.String `tfsdk:"winrm_port"`
-		Protocol         types.String `tfsdk:"protocol"`
-		PasswordPolicyID types.String `tfsdk:"password_policy_id"`
-		ScriptTemplateID types.String `tfsdk:"script_template_id"`
-		UseMainAccount   types.Bool   `tfsdk:"use_main_account"`
-	}
-	*/
+// VNCOptionsModel represents VNC service options
+type VNCOptionsModel struct {
+	FileTransfer types.Bool `tfsdk:"file_transfer"`
+	Clipboard    types.Bool `tfsdk:"clipboard"`
+}
 
-	RoleRefResourceModel struct {
-		ID types.String `tfsdk:"id"`
-	}
+// DBOptionsModel represents DB service options
+type DBOptionsModel struct {
+	MaxBytesUpload   types.Int64 `tfsdk:"max_bytes_upload"`
+	MaxBytesDownload types.Int64 `tfsdk:"max_bytes_download"`
+}
 
-	// Principal of the target host.
-	PrincipalModel struct {
-		ID             types.String           `tfsdk:"principal"`
-		Passphrase     types.String           `tfsdk:"passphrase"`
-		UseUserAccount types.Bool             `tfsdk:"use_user_account"`
-		Roles          []RoleRefResourceModel `tfsdk:"roles"`
+// CommandRestrictionsModel represents command restrictions
+type CommandRestrictionsModel struct {
+	Enabled          types.Bool   `tfsdk:"enabled"`
+	RShellVariant    types.String `tfsdk:"rshell_variant"`
+	DefaultWhitelist types.Object `tfsdk:"default_whitelist"`
+	Whitelists       types.List   `tfsdk:"whitelists"`
+	AllowNoMatch     types.Bool   `tfsdk:"allow_no_match"`
+	AuditMatch       types.Bool   `tfsdk:"audit_match"`
+	AuditNoMatch     types.Bool   `tfsdk:"audit_no_match"`
+	Banner           types.String `tfsdk:"banner"`
+}
 
-		/* FIXME: Not implemented in privx-sdk-go v1.29.0
-		Applications   []ApplicationModel     `tfsdk:"applications"`
-		Rotate                 types.Bool               `tfsdk:"rotate"`
-		UseForPasswordRotation types.Bool               `tfsdk:"use_for_password_rotation"`
-		ServiceOptions         ServiceOptionsModel      `tfsdk:"service_options"`
-		CommandRestrictions    CommandRestrictionsModel `tfsdk:"command_restrictions"`
-		*/
-	}
+// WhitelistGrantModel represents a whitelist grant
+type WhitelistGrantModel struct {
+	Whitelist types.Object `tfsdk:"whitelist"`
+	Roles     types.List   `tfsdk:"roles"`
+}
 
-	SSHPublicKeyModel struct {
-		Key types.String `tfsdk:"key"`
-	}
+// WhitelistHandleModel represents a whitelist handle
+type WhitelistHandleModel struct {
+	ID   types.String `tfsdk:"id"`
+	Name types.String `tfsdk:"name"`
+}
 
-	HostResourceModel struct {
-		ID                  types.String        `tfsdk:"id"`
-		AccessGroupID       types.String        `tfsdk:"access_group_id"`
-		ExternalID          types.String        `tfsdk:"external_id"`
-		InstanceID          types.String        `tfsdk:"instance_id"`
-		Name                types.String        `tfsdk:"common_name"`
-		ContactAddress      types.String        `tfsdk:"contact_address"`
-		CloudProvider       types.String        `tfsdk:"cloud_provider"`
-		CloudProviderRegion types.String        `tfsdk:"cloud_provider_region"`
-		DistinguishedName   types.String        `tfsdk:"distinguished_name"`
-		Organization        types.String        `tfsdk:"organization"`
-		OrganizationUnit    types.String        `tfsdk:"organizational_unit"`
-		Zone                types.String        `tfsdk:"zone"`
-		HostType            types.String        `tfsdk:"host_type"`
-		HostClassification  types.String        `tfsdk:"host_classification"`
-		Comment             types.String        `tfsdk:"comment"`
-		Tofu                types.Bool          `tfsdk:"tofu"`
-		StandAlone          types.Bool          `tfsdk:"stand_alone_host"`
-		Audit               types.Bool          `tfsdk:"audit_enabled"`
-		Scope               types.Set           `tfsdk:"scope"`
-		Tags                types.Set           `tfsdk:"tags"`
-		Addresses           types.Set           `tfsdk:"addresses"`
-		Services            []ServiceModel      `tfsdk:"services"`
-		Principals          []PrincipalModel    `tfsdk:"principals"`
-		PublicKeys          []SSHPublicKeyModel `tfsdk:"ssh_host_public_keys"`
-
-		/* FIXME: Not implemented in privx-sdk-go v1.29.0
-		CertificateTemplate     types.String          `tfsdk:"certificate_template"`
-		HostCertificateRaw      types.String          `tfsdk:"host_certificate_raw"`
-		PasswordRotationEnabled types.Bool            `tfsdk:"password_rotation_enabled"`
-		PasswordRotation        PasswordRotationModel `tfsdk:"password_rotation"`
-		*/
-
-		/* Set by privx, not needed in resource
-		SourceID            types.String        `tfsdk:"source_id"`
-		Deployable          types.Bool          `tfsdk:"deployable"`
-		*/
-	}
-)
+// SessionRecordingOptionsModel represents session recording options
+type SessionRecordingOptionsModel struct {
+	DisableClipboardRecording    types.Bool `tfsdk:"disable_clipboard_recording"`
+	DisableFileTransferRecording types.Bool `tfsdk:"disable_file_transfer_recording"`
+}
 
 func (r *HostResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_host"
@@ -181,9 +190,7 @@ func (r *HostResource) Metadata(ctx context.Context, req resource.MetadataReques
 
 func (r *HostResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Host resource",
-
+		MarkdownDescription: "Host resource for PrivX",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Host ID",
@@ -192,407 +199,473 @@ func (r *HostResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"access_group_id": schema.StringAttribute{
-				MarkdownDescription: "Defines host's access group",
-				Optional:            true,
+			"common_name": schema.StringAttribute{
+				MarkdownDescription: "Host common name",
+				Required:            true,
+			},
+			"addresses": schema.ListAttribute{
+				MarkdownDescription: "List of host addresses",
+				ElementType:         types.StringType,
+				Required:            true,
 			},
 			"external_id": schema.StringAttribute{
-				MarkdownDescription: "The equipment ID from the originating equipment store",
-				Optional:            true,
-			},
-			"instance_id": schema.StringAttribute{
-				MarkdownDescription: "The instance ID from the originating cloud service (searchable by keyword)",
-				Optional:            true,
-			},
-			"common_name": schema.StringAttribute{
-				MarkdownDescription: "X.500 Common name (searchable by keyword)",
-				Optional:            true,
-			},
-			"contact_address": schema.StringAttribute{
-				MarkdownDescription: "The host public address scanning script instructs the host store to use in service address-field.",
+				MarkdownDescription: "External ID for the host",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
+			"instance_id": schema.StringAttribute{
+				MarkdownDescription: "Instance ID for the host",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"source_id": schema.StringAttribute{
+				MarkdownDescription: "Source ID for the host",
+				Required:            true,
+			},
+			"access_group_id": schema.StringAttribute{
+				MarkdownDescription: "Access Group ID for the host",
+				Required:            true,
+			},
 			"cloud_provider": schema.StringAttribute{
-				MarkdownDescription: "The cloud provider the host resides in",
+				MarkdownDescription: "Cloud provider for the host",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
 			"cloud_provider_region": schema.StringAttribute{
-				MarkdownDescription: "The cloud provider region the host resides in",
+				MarkdownDescription: "Cloud provider region for the host",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
 			"distinguished_name": schema.StringAttribute{
-				MarkdownDescription: "LDAPv3 Disinguished name (searchable by keyword)",
+				MarkdownDescription: "Distinguished name for the host",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
 			"organization": schema.StringAttribute{
-				MarkdownDescription: "X.500 Organization (searchable by keyword)",
+				MarkdownDescription: "Organization for the host",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
 			"organizational_unit": schema.StringAttribute{
-				MarkdownDescription: "X.500 Organizational unit (searchable by keyword)",
+				MarkdownDescription: "Organizational unit for the host",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
 			"zone": schema.StringAttribute{
-				MarkdownDescription: "Equipment zone (development, production, user acceptance testing, ..) (searchable by keyword)",
+				MarkdownDescription: "Zone for the host",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
 			"host_type": schema.StringAttribute{
-				MarkdownDescription: "Equipment type (virtual, physical) (searchable by keyword)",
+				MarkdownDescription: "Host type",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
 			"host_classification": schema.StringAttribute{
-				MarkdownDescription: "Classification (Windows desktop, Windows server, AIX, Linux RH, ..) (searchable by keyword)",
+				MarkdownDescription: "Host classification",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
 			"comment": schema.StringAttribute{
-				MarkdownDescription: "A comment describing the host",
+				MarkdownDescription: "Comment for the host",
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
 			},
-			/* FIXME: Not implemented in privx-sdk-go v1.29.0
-			"host_certificate_raw": schema.StringAttribute{
-				MarkdownDescription: "Host certificate, used to verify that the target host is the correct one.",
+			"user_message": schema.StringAttribute{
+				MarkdownDescription: "User message for the host",
 				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 			},
-			*/
+			"disabled": schema.StringAttribute{
+				MarkdownDescription: "Whether the host is disabled",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("FALSE"),
+			},
+			"deployable": schema.BoolAttribute{
+				MarkdownDescription: "Whether the host is deployable",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+			},
 			"tofu": schema.BoolAttribute{
-				MarkdownDescription: "Whether the host key should be accepted and stored on first connection",
+				MarkdownDescription: "TOFU (Trust On First Use) setting",
 				Optional:            true,
 				Computed:            true,
 				Default:             booldefault.StaticBool(false),
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-				},
 			},
-			"stand_alone_host": schema.BoolAttribute{
-				MarkdownDescription: "Indicates it is a standalone host - bound to local host directory",
+			"toch": schema.BoolAttribute{
+				MarkdownDescription: "TOCH setting",
 				Optional:            true,
 				Computed:            true,
 				Default:             booldefault.StaticBool(false),
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-				},
 			},
 			"audit_enabled": schema.BoolAttribute{
-				MarkdownDescription: "Whether the host is set to be audited",
+				MarkdownDescription: "Whether audit is enabled for the host",
 				Optional:            true,
 				Computed:            true,
 				Default:             booldefault.StaticBool(false),
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.UseStateForUnknown(),
-				},
 			},
-			"scope": schema.SetAttribute{
-				ElementType:         types.StringType,
-				MarkdownDescription: "Under what compliance scopes the listed equipment falls under (searchable by keyword)",
+			"password_rotation_enabled": schema.BoolAttribute{
+				MarkdownDescription: "Whether password rotation is enabled",
 				Optional:            true,
 				Computed:            true,
-				Default:             setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})), // PrivX API uses empty lists instead of null values. We have to set empty sets
+				Default:             booldefault.StaticBool(false),
 			},
-			"tags": schema.SetAttribute{
-				ElementType:         types.StringType,
-				MarkdownDescription: "Host tags",
+			"contact_address": schema.StringAttribute{
+				MarkdownDescription: "Contact address for the host",
 				Optional:            true,
 				Computed:            true,
-				Default:             setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})),
+				Default:             stringdefault.StaticString(""),
 			},
-			"addresses": schema.SetAttribute{
+			"tags": schema.ListAttribute{
+				MarkdownDescription: "List of tags for the host (order may change due to API sorting)",
 				ElementType:         types.StringType,
-				MarkdownDescription: "Host addresses",
 				Optional:            true,
 				Computed:            true,
-				Default:             setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})),
 			},
-			/* FIXME: Not implemented in privx-sdk-go v1.29.0
-			"certificate_template": schema.StringAttribute{
-				MarkdownDescription: "Name of the certificate template used for certificate authentication for this host",
+			"services": schema.ListNestedAttribute{
+				MarkdownDescription: "List of services for the host",
 				Optional:            true,
-			},
-			*/
-			"ssh_host_public_keys": schema.SetNestedAttribute{
-				MarkdownDescription: "Host public keys, used to verify the identity of the accessed host",
-				Optional:            true,
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"key": schema.StringAttribute{
-							MarkdownDescription: "Host public key, used to verify the identity of the accessed host",
-							Optional:            true,
-						},
-					},
-				},
-			},
-			"services": schema.SetNestedAttribute{
-				MarkdownDescription: "Host services",
-				Optional:            true,
+				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"service": schema.StringAttribute{
-							MarkdownDescription: "Allowed protocol - SSH, RDP, VNC, HTTP, HTTPS (searchable)",
-							Optional:            true,
-							Validators: []validator.String{
-								stringvalidator.OneOf("SSH", "RDP", "VNC", "HTTP", "HTTPS"),
-							},
+							MarkdownDescription: "Service type (e.g., SSH, RDP, HTTP)",
+							Required:            true,
 						},
 						"address": schema.StringAttribute{
-							MarkdownDescription: "Service address, IPv4, IPv6 or FQDN",
+							MarkdownDescription: "Service address",
 							Optional:            true,
+							Computed:            true,
 						},
 						"port": schema.Int64Attribute{
 							MarkdownDescription: "Service port",
 							Optional:            true,
+							Computed:            true,
+							Default:             int64default.StaticInt64(22),
 						},
-						/*
-							"use_for_password_rotation": schema.BoolAttribute{
-								MarkdownDescription: "if service SSH, informs whether this service is used to rotate password",
-								Optional:            true,
-							},
-						*/
+						"use_for_password_rotation": schema.BoolAttribute{
+							MarkdownDescription: "Use this service for password rotation",
+							Optional:            true,
+							Computed:            true,
+							Default:             booldefault.StaticBool(false),
+						},
+						"ssh_tunnel_port": schema.Int64Attribute{
+							MarkdownDescription: "SSH tunnel port",
+							Optional:            true,
+							Computed:            true,
+							Default:             int64default.StaticInt64(0),
+						},
+						"use_plaintext_vnc": schema.BoolAttribute{
+							MarkdownDescription: "Use plaintext VNC",
+							Optional:            true,
+							Computed:            true,
+							Default:             booldefault.StaticBool(false),
+						},
+						"source": schema.StringAttribute{
+							MarkdownDescription: "Service source",
+							Optional:            true,
+							Computed:            true,
+							Default:             stringdefault.StaticString("UI"),
+						},
 					},
 				},
 			},
-			"principals": schema.SetNestedAttribute{
-				MarkdownDescription: "What principals (target server user names/ accounts) the host has",
+			"principals": schema.ListNestedAttribute{
+				MarkdownDescription: "List of principals for the host",
 				Optional:            true,
+				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"principal": schema.StringAttribute{
-							MarkdownDescription: "The account name",
+							MarkdownDescription: "Principal name",
 							Required:            true,
 						},
-						/* FIXME: Not implemented in privx-sdk-go v1.29.0
-						"rotate": schema.BoolAttribute{
-							MarkdownDescription: "Rotate password of this account",
-							Optional:            true,
-						},
-						"use_for_password_rotation": schema.BoolAttribute{
-							MarkdownDescription: "marks account to be used as the account through which password rotation takes place, when flag use_main_account set in rotation_metadata",
-							Optional:            true,
-						},
-						*/
-						"use_user_account": schema.BoolAttribute{
-							MarkdownDescription: "Use user account as host principal name",
-							Optional:            true,
-						},
 						"passphrase": schema.StringAttribute{
-							MarkdownDescription: "The account static passphrase or the initial rotating password value. If rotate selected, active in create, disabled/hidden in edit",
+							MarkdownDescription: "Principal passphrase (write-only, API returns masked value)",
 							Optional:            true,
 							Computed:            true,
-							Sensitive:           true,
 							Default:             stringdefault.StaticString(""),
 						},
-						"roles": schema.SetNestedAttribute{
-							MarkdownDescription: "An array of roles entitled to access this principal on the host",
+						"rotate": schema.BoolAttribute{
+							MarkdownDescription: "Whether to rotate the principal",
 							Optional:            true,
+							Computed:            true,
+							Default:             booldefault.StaticBool(false),
+						},
+						"use_for_password_rotation": schema.BoolAttribute{
+							MarkdownDescription: "Use this principal for password rotation",
+							Optional:            true,
+							Computed:            true,
+							Default:             booldefault.StaticBool(false),
+						},
+						"username_attribute": schema.StringAttribute{
+							MarkdownDescription: "Username attribute",
+							Optional:            true,
+							Computed:            true,
+							Default:             stringdefault.StaticString(""),
+						},
+						"use_user_account": schema.BoolAttribute{
+							MarkdownDescription: "Use user account",
+							Optional:            true,
+							Computed:            true,
+							Default:             booldefault.StaticBool(false),
+						},
+						"source": schema.StringAttribute{
+							MarkdownDescription: "Principal source",
+							Optional:            true,
+							Computed:            true,
+							Default:             stringdefault.StaticString("UI"),
+						},
+						"roles": schema.ListNestedAttribute{
+							MarkdownDescription: "List of roles for the principal",
+							Optional:            true,
+							Computed:            true,
 							NestedObject: schema.NestedAttributeObject{
 								Attributes: map[string]schema.Attribute{
 									"id": schema.StringAttribute{
-										MarkdownDescription: "Role UUID",
-										Optional:            true,
+										MarkdownDescription: "Role ID",
+										Required:            true,
 									},
-								},
-							},
-						},
-						/* FIXME: Not implemented in privx-sdk-go v1.29.0
-						"applications": schema.SetNestedAttribute{
-							MarkdownDescription: "An array of application the principal may launch on the target host",
-							Optional:            true,
-							NestedObject: schema.NestedAttributeObject{
-								Attributes: map[string]schema.Attribute{
 									"name": schema.StringAttribute{
-										Optional: true,
-									},
-									"application": schema.StringAttribute{
-										Optional: true,
-									},
-									"arguments": schema.StringAttribute{
-										Optional: true,
-									},
-									"working_directory": schema.StringAttribute{
-										Optional: true,
+										MarkdownDescription: "Role name",
+										Optional:            true,
+										Computed:            true,
 									},
 								},
 							},
 						},
-						*/
-						/* FIXME: Not implemented in privx-sdk-go v1.29.0
-						"service_options": schema.SingleNestedAttribute{
-							MarkdownDescription: "Object for service options",
+						"applications": schema.ListAttribute{
+							MarkdownDescription: "List of applications for the principal",
+							ElementType:         types.StringType,
 							Optional:            true,
+							Computed:            true,
+						},
+						"service_options": schema.SingleNestedAttribute{
+							MarkdownDescription: "Service options for the principal",
+							Optional:            true,
+							Computed:            true,
 							Attributes: map[string]schema.Attribute{
 								"ssh": schema.SingleNestedAttribute{
 									MarkdownDescription: "SSH service options",
 									Optional:            true,
+									Computed:            true,
 									Attributes: map[string]schema.Attribute{
 										"shell": schema.BoolAttribute{
-											MarkdownDescription: "Shell channel",
+											MarkdownDescription: "Allow shell access",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(true),
 										},
 										"file_transfer": schema.BoolAttribute{
-											MarkdownDescription: "File transfer channel",
+											MarkdownDescription: "Allow file transfer",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(true),
 										},
 										"exec": schema.BoolAttribute{
-											MarkdownDescription: "exec_channel",
+											MarkdownDescription: "Allow exec commands",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(true),
 										},
 										"tunnels": schema.BoolAttribute{
-											MarkdownDescription: "tunnels",
+											MarkdownDescription: "Allow tunnels",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(true),
 										},
 										"x11": schema.BoolAttribute{
-											MarkdownDescription: "x11",
+											MarkdownDescription: "Allow X11 forwarding",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(true),
 										},
 										"other": schema.BoolAttribute{
-											MarkdownDescription: "other options",
+											MarkdownDescription: "Allow other SSH features",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(true),
 										},
 									},
 								},
 								"rdp": schema.SingleNestedAttribute{
-									MarkdownDescription: "SSH service options",
+									MarkdownDescription: "RDP service options",
 									Optional:            true,
+									Computed:            true,
 									Attributes: map[string]schema.Attribute{
 										"file_transfer": schema.BoolAttribute{
-											MarkdownDescription: "File transfer channel",
+											MarkdownDescription: "Allow file transfer",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(false),
 										},
 										"audio": schema.BoolAttribute{
-											MarkdownDescription: "audio",
+											MarkdownDescription: "Allow audio",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(false),
 										},
 										"clipboard": schema.BoolAttribute{
-											MarkdownDescription: "clipboard",
+											MarkdownDescription: "Allow clipboard",
 											Optional:            true,
-										},
-										"web": schema.BoolAttribute{
-											MarkdownDescription: "WEB service options",
-											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(false),
 										},
 									},
 								},
 								"web": schema.SingleNestedAttribute{
-									MarkdownDescription: "SSH service options",
+									MarkdownDescription: "Web service options",
 									Optional:            true,
+									Computed:            true,
 									Attributes: map[string]schema.Attribute{
 										"file_transfer": schema.BoolAttribute{
-											MarkdownDescription: "File transfer channel",
+											MarkdownDescription: "Allow file transfer",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(false),
 										},
 										"audio": schema.BoolAttribute{
-											MarkdownDescription: "audio",
+											MarkdownDescription: "Allow audio",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(false),
 										},
 										"clipboard": schema.BoolAttribute{
-											MarkdownDescription: "clipboard",
+											MarkdownDescription: "Allow clipboard",
 											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(false),
+										},
+									},
+								},
+								"vnc": schema.SingleNestedAttribute{
+									MarkdownDescription: "VNC service options",
+									Optional:            true,
+									Computed:            true,
+									Attributes: map[string]schema.Attribute{
+										"file_transfer": schema.BoolAttribute{
+											MarkdownDescription: "Allow file transfer",
+											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(false),
+										},
+										"clipboard": schema.BoolAttribute{
+											MarkdownDescription: "Allow clipboard",
+											Optional:            true,
+											Computed:            true,
+											Default:             booldefault.StaticBool(false),
+										},
+									},
+								},
+								"db": schema.SingleNestedAttribute{
+									MarkdownDescription: "Database service options",
+									Optional:            true,
+									Computed:            true,
+									Attributes: map[string]schema.Attribute{
+										"max_bytes_upload": schema.Int64Attribute{
+											MarkdownDescription: "Maximum bytes for upload",
+											Optional:            true,
+											Computed:            true,
+											Default:             int64default.StaticInt64(0),
+										},
+										"max_bytes_download": schema.Int64Attribute{
+											MarkdownDescription: "Maximum bytes for download",
+											Optional:            true,
+											Computed:            true,
+											Default:             int64default.StaticInt64(0),
 										},
 									},
 								},
 							},
 						},
 						"command_restrictions": schema.SingleNestedAttribute{
-							MarkdownDescription: "Host services",
+							MarkdownDescription: "Command restrictions for the principal",
 							Optional:            true,
+							Computed:            true,
 							Attributes: map[string]schema.Attribute{
 								"enabled": schema.BoolAttribute{
-									MarkdownDescription: "Are command restrictions enabled",
+									MarkdownDescription: "Enable command restrictions",
 									Optional:            true,
+									Computed:            true,
+									Default:             booldefault.StaticBool(false),
+								},
+								"rshell_variant": schema.StringAttribute{
+									MarkdownDescription: "Shell variant (e.g., bash, sh)",
+									Optional:            true,
+									Computed:            true,
+									Default:             stringdefault.StaticString(""),
 								},
 								"default_whitelist": schema.SingleNestedAttribute{
-									MarkdownDescription: "Default whitelist handle, required if command restrictions are enabled",
+									MarkdownDescription: "Default whitelist",
 									Optional:            true,
+									Computed:            true,
 									Attributes: map[string]schema.Attribute{
 										"id": schema.StringAttribute{
 											MarkdownDescription: "Whitelist ID",
-											Required:            true,
+											Optional:            true,
+											Computed:            true,
+											Default:             stringdefault.StaticString(""),
 										},
 										"name": schema.StringAttribute{
 											MarkdownDescription: "Whitelist name",
 											Optional:            true,
-										},
-										"deleted": schema.BoolAttribute{
-											MarkdownDescription: "Has whitelist been deleted, ignored in requests",
-											Optional:            true,
+											Computed:            true,
+											Default:             stringdefault.StaticString(""),
 										},
 									},
 								},
-								"rshell_variant": schema.StringAttribute{
-									MarkdownDescription: "Restricted shell variant, required if command restrictions are enabled",
+								"whitelists": schema.ListNestedAttribute{
+									MarkdownDescription: "List of whitelists with roles",
 									Optional:            true,
-									Validators: []validator.String{
-										stringvalidator.OneOf("bash", "posix"),
-									},
-								},
-								"banner": schema.StringAttribute{
-									MarkdownDescription: "Optional banner displayed in SSH terminal",
-									Optional:            true,
-								},
-								"allow_no_match": schema.BoolAttribute{
-									MarkdownDescription: "If true then commands that do not match any whitelist pattern are allowed to execute",
-									Optional:            true,
-								},
-								"audit_match": schema.BoolAttribute{
-									MarkdownDescription: "If true then an audit event is generated for every allowed command",
-									Optional:            true,
-								},
-								"audit_no_match": schema.BoolAttribute{
-									MarkdownDescription: "If true then an audit event is generated for every disallowed command",
-									Optional:            true,
-								},
-								"whitelists": schema.SetNestedAttribute{
-									Optional: true,
+									Computed:            true,
 									NestedObject: schema.NestedAttributeObject{
 										Attributes: map[string]schema.Attribute{
 											"whitelist": schema.SingleNestedAttribute{
-												Optional: true,
+												MarkdownDescription: "Whitelist reference",
+												Required:            true,
 												Attributes: map[string]schema.Attribute{
 													"id": schema.StringAttribute{
 														MarkdownDescription: "Whitelist ID",
-														Required:            true,
+														Optional:            true,
+														Computed:            true,
+														Default:             stringdefault.StaticString(""),
 													},
 													"name": schema.StringAttribute{
 														MarkdownDescription: "Whitelist name",
 														Optional:            true,
-													},
-
-													"deleted": schema.BoolAttribute{
-														MarkdownDescription: "Has whitelist been deleted, ignored in requests",
-														Optional:            true,
+														Computed:            true,
+														Default:             stringdefault.StaticString(""),
 													},
 												},
 											},
-											"roles": schema.SetNestedAttribute{
-												MarkdownDescription: "List of roles granting access to the whitelist",
+											"roles": schema.ListNestedAttribute{
+												MarkdownDescription: "Roles for this whitelist",
 												Optional:            true,
-
+												Computed:            true,
 												NestedObject: schema.NestedAttributeObject{
 													Attributes: map[string]schema.Attribute{
 														"id": schema.StringAttribute{
 															MarkdownDescription: "Role ID",
 															Required:            true,
+														},
+														"name": schema.StringAttribute{
+															MarkdownDescription: "Role name",
+															Optional:            true,
+															Computed:            true,
 														},
 													},
 												},
@@ -600,72 +673,94 @@ func (r *HostResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 										},
 									},
 								},
+								"allow_no_match": schema.BoolAttribute{
+									MarkdownDescription: "Allow commands that don't match any whitelist",
+									Optional:            true,
+									Computed:            true,
+									Default:             booldefault.StaticBool(false),
+								},
+								"audit_match": schema.BoolAttribute{
+									MarkdownDescription: "Audit commands that match whitelists",
+									Optional:            true,
+									Computed:            true,
+									Default:             booldefault.StaticBool(false),
+								},
+								"audit_no_match": schema.BoolAttribute{
+									MarkdownDescription: "Audit commands that don't match whitelists",
+									Optional:            true,
+									Computed:            true,
+									Default:             booldefault.StaticBool(false),
+								},
+								"banner": schema.StringAttribute{
+									MarkdownDescription: "Banner message to display",
+									Optional:            true,
+									Computed:            true,
+									Default:             stringdefault.StaticString(""),
+								},
 							},
 						},
-						*/
 					},
 				},
 			},
-			/* FIXME: Not implemented in privx-sdk-go v1.29.0
-			"password_rotation_enabled": schema.BoolAttribute{
-				MarkdownDescription: "set, if there are accounts, in which passwords need to be rotated",
+			"ssh_host_public_keys": schema.ListNestedAttribute{
+				MarkdownDescription: "List of SSH host public keys",
 				Optional:            true,
+				Computed:            true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"key": schema.StringAttribute{
+							MarkdownDescription: "SSH public key",
+							Required:            true,
+						},
+						"fingerprint": schema.StringAttribute{
+							MarkdownDescription: "SSH key fingerprint",
+							Optional:            true,
+							Computed:            true,
+						},
+					},
+				},
 			},
-			*/
-			/* FIXME: Not implemented in privx-sdk-go v1.29.0
-			"password_rotation": schema.SingleNestedAttribute{
-				MarkdownDescription: "password rotation settings for host",
+			"session_recording_options": schema.SingleNestedAttribute{
+				MarkdownDescription: "Session recording options",
 				Optional:            true,
+				Computed:            true,
 				Attributes: map[string]schema.Attribute{
-					"use_main_account": schema.BoolAttribute{
-						MarkdownDescription: "rotate passwords of all accounts in host through one account",
-						Required:            true,
-					},
-					"operating_system": schema.StringAttribute{
-						MarkdownDescription: "Bash for Linux, Powershell for windows for shell access (LINUX | WINDOWS)",
-						Required:            true,
-						Validators: []validator.String{
-							stringvalidator.OneOf("LINUX", "WINDOWS"),
-						},
-					},
-					"winrm_address": schema.StringAttribute{
-						MarkdownDescription: "IPv4 address or FQDN to use for winrm connection",
+					"disable_clipboard_recording": schema.BoolAttribute{
+						MarkdownDescription: "Disable clipboard recording",
 						Optional:            true,
+						Computed:            true,
+						Default:             booldefault.StaticBool(false),
 					},
-					"winrm_port": schema.Int64Attribute{
-						MarkdownDescription: "port to use for password rotation with winrm, zero for winrm default",
+					"disable_file_transfer_recording": schema.BoolAttribute{
+						MarkdownDescription: "Disable file transfer recording",
 						Optional:            true,
-					},
-					"protocol": schema.StringAttribute{
-						MarkdownDescription: "protocol (SSH | WINRM)",
-						Required:            true,
-						Validators: []validator.String{
-							stringvalidator.OneOf("SSH", "WINRM"),
-						},
-					},
-					"password_policy_id": schema.StringAttribute{
-						MarkdownDescription: "password policy to be applied",
-						Required:            true,
-					},
-					"script_template_id": schema.StringAttribute{
-						MarkdownDescription: "script template to be run in host",
-						Required:            true,
+						Computed:            true,
+						Default:             booldefault.StaticBool(false),
 					},
 				},
 			},
-			*/
+			"created": schema.StringAttribute{
+				MarkdownDescription: "Creation timestamp",
+				Computed:            true,
+			},
+			"updated": schema.StringAttribute{
+				MarkdownDescription: "Last update timestamp",
+				Computed:            true,
+			},
+			"updated_by": schema.StringAttribute{
+				MarkdownDescription: "ID of user who last updated the host",
+				Computed:            true,
+			},
 		},
 	}
 }
 
 func (r *HostResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
 
 	connector, ok := req.ProviderData.(*restapi.Connector)
-
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
@@ -673,426 +768,665 @@ func (r *HostResource) Configure(ctx context.Context, req resource.ConfigureRequ
 		)
 		return
 	}
-	tflog.Debug(ctx, "Creating hoststore", map[string]interface{}{
-		"connector : ": fmt.Sprintf("%+v", *connector),
+
+	tflog.Debug(ctx, "Creating hoststore client", map[string]interface{}{
+		"connector": fmt.Sprintf("%+v", *connector),
 	})
 
 	r.client = hoststore.New(*connector)
 }
 
 func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data HostResourceModel
+	var data *HostResourceModel
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	tflog.Debug(ctx, "Loaded host type data", map[string]interface{}{
+	tflog.Debug(ctx, "Loaded host data", map[string]interface{}{
 		"data": fmt.Sprintf("%+v", data),
 	})
 
-	var scopePayload []string
-	resp.Diagnostics.Append(data.Scope.ElementsAs(ctx, &scopePayload, false)...)
-	if resp.Diagnostics.HasError() {
-		return
+	// Convert addresses list to string slice
+	var addresses []string
+	if !data.Addresses.IsNull() && !data.Addresses.IsUnknown() {
+		data.Addresses.ElementsAs(ctx, &addresses, false)
 	}
 
-	var tagsPayload []string
-	resp.Diagnostics.Append(data.Tags.ElementsAs(ctx, &tagsPayload, false)...)
-	if resp.Diagnostics.HasError() {
-		return
+	// Convert tags list to string slice and sort for consistency
+	var tags []string
+	if !data.Tags.IsNull() && !data.Tags.IsUnknown() {
+		data.Tags.ElementsAs(ctx, &tags, false)
+		sort.Strings(tags) // Sort to ensure consistent ordering
 	}
 
-	var addressesPayload []string
-	resp.Diagnostics.Append(data.Addresses.ElementsAs(ctx, &addressesPayload, false)...)
-	if resp.Diagnostics.HasError() {
-		return
+	// Convert services
+	var services []hoststore.HostService
+	for _, sm := range data.Services {
+		service := hoststore.HostService{
+			Service:                sm.Service.ValueString(),
+			Address:                sm.Address.ValueString(),
+			Port:                   int(sm.Port.ValueInt64()),
+			UseForPasswordRotation: sm.UseForPasswordRotation.ValueBool(),
+			TunnelPort:             int(sm.SSHTunnelPort.ValueInt64()),
+			UsePlainTextVNC:        sm.UsePlaintextVNC.ValueBool(),
+			Source:                 sm.Source.ValueString(),
+		}
+		services = append(services, service)
 	}
 
-	var servicesPayload []hoststore.HostService
-	for _, service := range data.Services {
-		servicesPayload = append(servicesPayload,
-			hoststore.HostService{
-				Service: service.Scheme.ValueString(),
-				Address: service.Address.ValueString(),
-				Port:    int(service.Port.ValueInt64()),
-				// UseForPasswordRotation: service.UseForPasswordRotation.ValueBool(), // FIXME: Not implemented in privx-sdk-go v1.29.0
-			})
-	}
+	// Convert principals
+	var principals []hoststore.HostPrincipals
+	for _, pm := range data.Principals {
+		principal := hoststore.HostPrincipals{
+			Principal:              pm.Principal.ValueString(),
+			Passphrase:             pm.Passphrase.ValueString(),
+			Rotate:                 pm.Rotate.ValueBool(),
+			UseForPasswordRotation: pm.UseForPasswordRotation.ValueBool(),
+			UsernameAttribute:      pm.UsernameAttribute.ValueString(),
+			UseUserAccount:         pm.UseUserAccount.ValueBool(),
+			Source:                 pm.Source.ValueString(),
+		}
 
-	var principalsPayload []hoststore.Principal
-	for _, principal := range data.Principals {
-		var rolesPayload []rolestore.RoleHandle
-		for _, role := range principal.Roles {
-			rolesPayload = append(rolesPayload,
-				rolestore.RoleHandle{
-					ID: role.ID.ValueString(),
+		// Convert roles
+		if !pm.Roles.IsNull() && !pm.Roles.IsUnknown() {
+			var roleModels []RoleModel
+			pm.Roles.ElementsAs(ctx, &roleModels, false)
+
+			for _, rm := range roleModels {
+				role := hoststore.HostRole{
+					ID:   rm.ID.ValueString(),
+					Name: rm.Name.ValueString(),
+				}
+				principal.Roles = append(principal.Roles, role)
+			}
+		}
+
+		// Convert applications
+		if !pm.Applications.IsNull() && !pm.Applications.IsUnknown() {
+			var apps []string
+			pm.Applications.ElementsAs(ctx, &apps, false)
+			for _, app := range apps {
+				principal.Applications = append(principal.Applications, hoststore.HostPrincipalApplications{
+					Name: app,
 				})
+			}
 		}
-		/* FIXME: object application not implemented, principal only takes []string.
-		var applicationsPayload []hoststore.Application
-		for _, application := range principal.Applications {
-			applicationsPayload = append(applicationsPayload,
-			hoststore.Application {
-				Name: application.Name.ValueString(),
-				Application: application.Applictaion.ValueString(),
-				Arguments: application.Arguments.ValueString(),
-				WorkingDirectory: application.WorkingDirectory.ValueString(),
-			})
-		}
-		*/
 
-		principalsPayload = append(principalsPayload,
-			hoststore.Principal{
-				ID:             principal.ID.ValueString(),
-				Source:         "terraform",
-				UseUserAccount: principal.UseUserAccount.ValueBool(),
-				Passphrase:     principal.Passphrase.ValueString(),
-				Roles:          rolesPayload,
-			})
+		// Convert service options
+		if !pm.ServiceOptions.IsNull() && !pm.ServiceOptions.IsUnknown() {
+			var serviceOptionsModel ServiceOptionsModel
+			pm.ServiceOptions.As(ctx, &serviceOptionsModel, basetypes.ObjectAsOptions{})
+
+			serviceOptions := &hoststore.HostServiceOptions{}
+
+			// SSH options
+			if !serviceOptionsModel.SSH.IsNull() && !serviceOptionsModel.SSH.IsUnknown() {
+				var sshModel SSHOptionsModel
+				serviceOptionsModel.SSH.As(ctx, &sshModel, basetypes.ObjectAsOptions{})
+				serviceOptions.SSHServiceOptions = &hoststore.SSHServiceOptions{
+					Shell:        sshModel.Shell.ValueBool(),
+					FileTransfer: sshModel.FileTransfer.ValueBool(),
+					Exec:         sshModel.Exec.ValueBool(),
+					Tunnels:      sshModel.Tunnels.ValueBool(),
+					X11:          sshModel.X11.ValueBool(),
+					Other:        sshModel.Other.ValueBool(),
+				}
+			}
+
+			// RDP options
+			if !serviceOptionsModel.RDP.IsNull() && !serviceOptionsModel.RDP.IsUnknown() {
+				var rdpModel RDPOptionsModel
+				serviceOptionsModel.RDP.As(ctx, &rdpModel, basetypes.ObjectAsOptions{})
+				serviceOptions.RDPServiceOptions = &hoststore.RDPServiceOptions{
+					FileTransfer: rdpModel.FileTransfer.ValueBool(),
+					Audio:        rdpModel.Audio.ValueBool(),
+					Clipboard:    rdpModel.Clipboard.ValueBool(),
+				}
+			}
+
+			// Web options
+			if !serviceOptionsModel.Web.IsNull() && !serviceOptionsModel.Web.IsUnknown() {
+				var webModel WebOptionsModel
+				serviceOptionsModel.Web.As(ctx, &webModel, basetypes.ObjectAsOptions{})
+				serviceOptions.WebServiceOptions = &hoststore.WebServiceOptions{
+					FileTransfer: webModel.FileTransfer.ValueBool(),
+					Audio:        webModel.Audio.ValueBool(),
+					Clipboard:    webModel.Clipboard.ValueBool(),
+				}
+			}
+
+			// VNC options
+			if !serviceOptionsModel.VNC.IsNull() && !serviceOptionsModel.VNC.IsUnknown() {
+				var vncModel VNCOptionsModel
+				serviceOptionsModel.VNC.As(ctx, &vncModel, basetypes.ObjectAsOptions{})
+				serviceOptions.VNCServiceOptions = &hoststore.VNCServiceOptions{
+					FileTransfer: vncModel.FileTransfer.ValueBool(),
+					Clipboard:    vncModel.Clipboard.ValueBool(),
+				}
+			}
+
+			// DB options
+			if !serviceOptionsModel.DB.IsNull() && !serviceOptionsModel.DB.IsUnknown() {
+				var dbModel DBOptionsModel
+				serviceOptionsModel.DB.As(ctx, &dbModel, basetypes.ObjectAsOptions{})
+				serviceOptions.DBServiceOptions = &hoststore.DBServiceOptions{
+					MaxBytesUpload:   dbModel.MaxBytesUpload.ValueInt64(),
+					MaxBytesDownload: dbModel.MaxBytesDownload.ValueInt64(),
+				}
+			}
+
+			principal.ServiceOptions = serviceOptions
+		}
+
+		// Convert command restrictions
+		if !pm.CommandRestrictions.IsNull() && !pm.CommandRestrictions.IsUnknown() {
+			var commandRestrictionsModel CommandRestrictionsModel
+			pm.CommandRestrictions.As(ctx, &commandRestrictionsModel, basetypes.ObjectAsOptions{})
+
+			commandRestrictions := hoststore.HostCommandRestrictions{
+				Enabled:       commandRestrictionsModel.Enabled.ValueBool(),
+				RShellVariant: commandRestrictionsModel.RShellVariant.ValueString(),
+				AllowNoMatch:  commandRestrictionsModel.AllowNoMatch.ValueBool(),
+				AuditMatch:    commandRestrictionsModel.AuditMatch.ValueBool(),
+				AuditNoMatch:  commandRestrictionsModel.AuditNoMatch.ValueBool(),
+				Banner:        commandRestrictionsModel.Banner.ValueString(),
+			}
+
+			// Convert default whitelist
+			if !commandRestrictionsModel.DefaultWhitelist.IsNull() && !commandRestrictionsModel.DefaultWhitelist.IsUnknown() {
+				var defaultWhitelistModel WhitelistHandleModel
+				commandRestrictionsModel.DefaultWhitelist.As(ctx, &defaultWhitelistModel, basetypes.ObjectAsOptions{})
+				commandRestrictions.DefaultWhiteList = hoststore.WhiteListHandle{
+					ID:   defaultWhitelistModel.ID.ValueString(),
+					Name: defaultWhitelistModel.Name.ValueString(),
+				}
+			}
+
+			// Convert whitelists
+			if !commandRestrictionsModel.Whitelists.IsNull() && !commandRestrictionsModel.Whitelists.IsUnknown() {
+				var whitelistGrantModels []WhitelistGrantModel
+				commandRestrictionsModel.Whitelists.ElementsAs(ctx, &whitelistGrantModels, false)
+
+				for _, wgm := range whitelistGrantModels {
+					whitelistGrant := hoststore.WhiteListGrant{}
+
+					// Convert whitelist handle
+					if !wgm.Whitelist.IsNull() && !wgm.Whitelist.IsUnknown() {
+						var whitelistHandleModel WhitelistHandleModel
+						wgm.Whitelist.As(ctx, &whitelistHandleModel, basetypes.ObjectAsOptions{})
+						whitelistGrant.WhiteList = hoststore.WhiteListHandle{
+							ID:   whitelistHandleModel.ID.ValueString(),
+							Name: whitelistHandleModel.Name.ValueString(),
+						}
+					}
+
+					// Convert roles
+					if !wgm.Roles.IsNull() && !wgm.Roles.IsUnknown() {
+						var roleModels []RoleModel
+						wgm.Roles.ElementsAs(ctx, &roleModels, false)
+
+						for _, rm := range roleModels {
+							role := hoststore.HostRole{
+								ID:   rm.ID.ValueString(),
+								Name: rm.Name.ValueString(),
+							}
+							whitelistGrant.Roles = append(whitelistGrant.Roles, role)
+						}
+					}
+
+					commandRestrictions.WhiteLists = append(commandRestrictions.WhiteLists, whitelistGrant)
+				}
+			}
+
+			principal.CommandRestrictions = commandRestrictions
+		}
+
+		principals = append(principals, principal)
 	}
 
-	var publicKeysPayload []hoststore.HostSSHPubKeys
-	for _, SSHKey := range data.PublicKeys {
-		publicKeysPayload = append(publicKeysPayload,
-			hoststore.HostSSHPubKeys{
-				Key: SSHKey.Key.ValueString(),
-			})
-	}
+	// Convert SSH host public keys
+	var sshHostPublicKeys []hoststore.HostSSHPubKeys
+	if !data.SSHHostPublicKeys.IsNull() && !data.SSHHostPublicKeys.IsUnknown() {
+		var keyModels []SSHHostPublicKeyModel
+		data.SSHHostPublicKeys.ElementsAs(ctx, &keyModels, false)
 
-	// Convert principals to the correct SDK v2 format
-	var principalsSDKPayload []hoststore.HostPrincipals
-	for _, principal := range principalsPayload {
-		var rolesSDK []hoststore.HostRole
-		for _, role := range principal.Roles {
-			rolesSDK = append(rolesSDK, hoststore.HostRole{
-				ID: role.ID,
-			})
+		for _, km := range keyModels {
+			key := hoststore.HostSSHPubKeys{
+				Key:         km.Key.ValueString(),
+				FingerPrint: km.Fingerprint.ValueString(),
+			}
+			sshHostPublicKeys = append(sshHostPublicKeys, key)
 		}
-		principalsSDKPayload = append(principalsSDKPayload, hoststore.HostPrincipals{
-			Principal:      principal.ID,
-			UseUserAccount: principal.UseUserAccount,
-			Passphrase:     principal.Passphrase,
-			Source:         principal.Source,
-			Roles:          rolesSDK,
-		})
 	}
 
-	// Convert boolean values to pointers as required by SDK v2
-	tofuPtr := data.Tofu.ValueBool()
-	auditPtr := data.Audit.ValueBool()
+	// Convert session recording options
+	var sessionRecordingOptions *hoststore.SessionRecordingOptions
+	if !data.SessionRecordingOptions.IsNull() && !data.SessionRecordingOptions.IsUnknown() {
+		var sroModel SessionRecordingOptionsModel
+		diags := data.SessionRecordingOptions.As(ctx, &sroModel, basetypes.ObjectAsOptions{})
+		if diags.HasError() {
+			resp.Diagnostics.Append(diags...)
+			return
+		}
+
+		sessionRecordingOptions = &hoststore.SessionRecordingOptions{
+			DisableClipboardRecording:    sroModel.DisableClipboardRecording.ValueBool(),
+			DisableFileTransferRecording: sroModel.DisableFileTransferRecording.ValueBool(),
+		}
+	}
+
+	deployable := data.Deployable.ValueBool()
+	tofu := data.Tofu.ValueBool()
+	toch := data.Toch.ValueBool()
+	auditEnabled := data.AuditEnabled.ValueBool()
 
 	host := hoststore.Host{
-		AccessGroupID:       data.AccessGroupID.ValueString(),
-		ExternalID:          data.ExternalID.ValueString(),
-		InstanceID:          data.InstanceID.ValueString(),
-		CommonName:          data.Name.ValueString(),
-		ContactAddress:      data.ContactAddress.ValueString(),
-		CloudProvider:       data.CloudProvider.ValueString(),
-		CloudProviderRegion: data.CloudProviderRegion.ValueString(),
-		DistinguishedName:   data.DistinguishedName.ValueString(),
-		Organization:        data.Organization.ValueString(),
-		OrganizationalUnit:  data.OrganizationUnit.ValueString(),
-		Zone:                data.Zone.ValueString(),
-		HostType:            data.HostType.ValueString(),
-		HostClassification:  data.HostClassification.ValueString(),
-		Comment:             data.Comment.ValueString(),
-		Tofu:                &tofuPtr,
-		StandAloneHost:      data.StandAlone.ValueBool(),
-		AuditEnabled:        &auditPtr,
-		Scope:               scopePayload,
-		Tags:                tagsPayload,
-		Addresses:           addressesPayload,
-		Services:            servicesPayload,
-		Principals:          principalsSDKPayload,
-		SSHHostPubKeys:      publicKeysPayload,
+		CommonName:              data.CommonName.ValueString(),
+		Addresses:               addresses,
+		ExternalID:              data.ExternalID.ValueString(),
+		InstanceID:              data.InstanceID.ValueString(),
+		SourceID:                data.SourceID.ValueString(),
+		AccessGroupID:           data.AccessGroupID.ValueString(),
+		CloudProvider:           data.CloudProvider.ValueString(),
+		CloudProviderRegion:     data.CloudProviderRegion.ValueString(),
+		DistinguishedName:       data.DistinguishedName.ValueString(),
+		Organization:            data.Organization.ValueString(),
+		OrganizationalUnit:      data.OrganizationalUnit.ValueString(),
+		Zone:                    data.Zone.ValueString(),
+		HostType:                data.HostType.ValueString(),
+		HostClassification:      data.HostClassification.ValueString(),
+		Comment:                 data.Comment.ValueString(),
+		UserMessage:             data.UserMessage.ValueString(),
+		Disabled:                data.Disabled.ValueString(),
+		Deployable:              &deployable,
+		Tofu:                    &tofu,
+		Toch:                    &toch,
+		AuditEnabled:            &auditEnabled,
+		PasswordRotationEnabled: data.PasswordRotationEnabled.ValueBool(),
+		ContactAddress:          data.ContactAddress.ValueString(),
+		Tags:                    tags,
+		Services:                services,
+		Principals:              principals,
+		SSHHostPubKeys:          sshHostPublicKeys,
+		SessionRecordingOptions: sessionRecordingOptions,
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("hoststore.Host model used: %+v", host))
 
-	hostID, err := r.client.CreateHost(&host)
-
+	createdHost, err := r.client.CreateHost(&host)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to Create Resource",
-			"An unexpected error occurred while attempting to create the resource.\n"+
+			"Unable to Create Host",
+			"An unexpected error occurred while attempting to create the host.\n"+
 				err.Error(),
 		)
 		return
 	}
 
-	// Convert from the API data model to the Terraform data model
-	// and set any unknown attribute values.
-	data.ID = types.StringValue(hostID.ID)
+	data.ID = types.StringValue(createdHost.ID)
 
-	// Write logs using the tflog package
-	// Documentation: https://terraform.io/plugin/log
+	// Read back the created resource to populate all computed fields
+	hostRead, err := r.client.GetHost(createdHost.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read created host, got error: %s", err))
+		return
+	}
+
+	// Populate all the computed fields from the API response
+	r.populateHostModel(ctx, data, hostRead)
+
 	tflog.Debug(ctx, "created host resource")
-
-	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *HostResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data *HostResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	host, err := r.client.GetHost(data.ID.ValueString())
 	if err != nil {
+		// Log the full error for debugging
+		errorStr := err.Error()
+		tflog.Debug(ctx, "Error reading host", map[string]interface{}{
+			"id":    data.ID.ValueString(),
+			"error": errorStr,
+		})
+
+		// Check if the error indicates the resource no longer exists
+		if strings.Contains(errorStr, "NOT_FOUND") ||
+			strings.Contains(errorStr, "404") ||
+			strings.Contains(errorStr, "BAD_REQUEST") {
+			// Resource likely no longer exists, remove from state
+			tflog.Info(ctx, "Host resource appears to be deleted, removing from state", map[string]interface{}{
+				"id":    data.ID.ValueString(),
+				"error": errorStr,
+			})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read host, got error: %s", err))
 		return
 	}
 
-	data.AccessGroupID = types.StringValue(host.AccessGroupID)
-	data.ExternalID = types.StringValue(host.ExternalID)
-	data.InstanceID = types.StringValue(host.InstanceID)
-	data.Name = types.StringValue(host.CommonName)
-	data.ContactAddress = types.StringValue(host.ContactAddress)
-	data.CloudProvider = types.StringValue(host.CloudProvider)
-	data.CloudProviderRegion = types.StringValue(host.CloudProviderRegion)
-	data.DistinguishedName = types.StringValue(host.DistinguishedName)
-	data.Organization = types.StringValue(host.Organization)
-	data.OrganizationUnit = types.StringValue(host.OrganizationalUnit)
-	data.Zone = types.StringValue(host.Zone)
-	data.HostType = types.StringValue(host.HostType)
-	data.HostClassification = types.StringValue(host.HostClassification)
-	data.Comment = types.StringValue(host.Comment)
-	data.Tofu = types.BoolValue(*host.Tofu)
-	data.StandAlone = types.BoolValue(host.StandAloneHost)
-	data.Audit = types.BoolValue(*host.AuditEnabled)
+	r.populateHostModel(ctx, data, host)
 
-	scope, diags := types.SetValueFrom(ctx, data.Scope.ElementType(ctx), host.Scope)
-	if diags.HasError() {
-		return
-	}
-	data.Scope = scope
-
-	tags, diags := types.SetValueFrom(ctx, data.Tags.ElementType(ctx), host.Tags)
-	if diags.HasError() {
-		return
-	}
-	data.Tags = tags
-
-	addresses, diags := types.SetValueFrom(ctx, data.Addresses.ElementType(ctx), host.Addresses)
-	if diags.HasError() {
-		return
-	}
-	data.Addresses = addresses
-
-	var services []ServiceModel
-	for _, s := range host.Services {
-		services = append(services, ServiceModel{
-			Scheme:  types.StringValue(s.Service),
-			Address: types.StringValue(s.Address),
-			Port:    types.Int64Value(int64(s.Port)),
-			// UseForPasswordRotation: types.StringValue(s.UseForPasswordRotation), // FIXME: Not implemented in privx-sdk-go v1.29.0
-		})
-	}
-	data.Services = services
-
-	var principals []PrincipalModel
-	for _, p := range host.Principals {
-		var roles []RoleRefResourceModel
-		for _, r := range p.Roles {
-			roles = append(roles, RoleRefResourceModel{
-				ID: types.StringValue(r.ID),
-			})
-		}
-		var passphrase string
-		for _, dp := range data.Principals {
-			if dp.ID.ValueString() == p.Principal {
-				passphrase = dp.Passphrase.ValueString()
-			}
-		}
-		principals = append(principals, PrincipalModel{
-			ID:             types.StringValue(p.Principal),
-			Passphrase:     types.StringValue(passphrase),
-			UseUserAccount: types.BoolValue(p.UseUserAccount),
-			// Rotate:     types.BoolValue(p.Rotate), // FIXME: Not implemented in privx-sdk-go v1.29.0
-			// UseForPasswordRotation:     types.BoolValue(p.UseForPasswordRotation), // FIXME: Not implemented in privx-sdk-go v1.29.0
-			// ServiceOptions: serviceOptions, // FIXME: Not implemented in privx-sdk-go v1.29.0
-			// CommandRestrictions: commandRestrictions, // FIXME: Not implemented in privx-sdk-go v1.29.0
-			Roles: roles,
-		})
-	}
-	data.Principals = principals
-
-	var publickeys []SSHPublicKeyModel
-	for _, pb := range host.SSHHostPubKeys {
-		publickeys = append(publickeys, SSHPublicKeyModel{
-			Key: types.StringValue(pb.Key),
-		})
-	}
-	data.PublicKeys = publickeys
-
-	tflog.Debug(ctx, "Storing host type into the state", map[string]interface{}{
-		"createNewState": fmt.Sprintf("%+v", data),
+	tflog.Debug(ctx, "Storing host into the state", map[string]interface{}{
+		"state": fmt.Sprintf("%+v", data),
 	})
-	// Save updated data into Terraform state
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data *HostResourceModel
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var scopePayload []string
-	resp.Diagnostics.Append(data.Scope.ElementsAs(ctx, &scopePayload, false)...)
-	if resp.Diagnostics.HasError() {
+	currentHost, err := r.client.GetHost(data.ID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read current host, got error: %s", err))
 		return
 	}
 
-	tagsPayload := make([]string, len(data.Tags.Elements()))
-	resp.Diagnostics.Append(data.Tags.ElementsAs(ctx, &tagsPayload, false)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	// Update the host with new values
+	currentHost.CommonName = data.CommonName.ValueString()
+	currentHost.ExternalID = data.ExternalID.ValueString()
+	currentHost.InstanceID = data.InstanceID.ValueString()
+	currentHost.SourceID = data.SourceID.ValueString()
+	currentHost.AccessGroupID = data.AccessGroupID.ValueString()
+	currentHost.CloudProvider = data.CloudProvider.ValueString()
+	currentHost.CloudProviderRegion = data.CloudProviderRegion.ValueString()
+	currentHost.DistinguishedName = data.DistinguishedName.ValueString()
+	currentHost.Organization = data.Organization.ValueString()
+	currentHost.OrganizationalUnit = data.OrganizationalUnit.ValueString()
+	currentHost.Zone = data.Zone.ValueString()
+	currentHost.HostType = data.HostType.ValueString()
+	currentHost.HostClassification = data.HostClassification.ValueString()
+	currentHost.Comment = data.Comment.ValueString()
+	currentHost.UserMessage = data.UserMessage.ValueString()
+	currentHost.Disabled = data.Disabled.ValueString()
+	deployable := data.Deployable.ValueBool()
+	tofu := data.Tofu.ValueBool()
+	toch := data.Toch.ValueBool()
+	auditEnabled := data.AuditEnabled.ValueBool()
+	currentHost.Deployable = &deployable
+	currentHost.Tofu = &tofu
+	currentHost.Toch = &toch
+	currentHost.AuditEnabled = &auditEnabled
+	currentHost.PasswordRotationEnabled = data.PasswordRotationEnabled.ValueBool()
+	currentHost.ContactAddress = data.ContactAddress.ValueString()
 
-	var addressesPayload []string
-	resp.Diagnostics.Append(data.Addresses.ElementsAs(ctx, &addressesPayload, false)...)
-	if resp.Diagnostics.HasError() {
-		return
+	// Convert addresses list to string slice
+	var addresses []string
+	if !data.Addresses.IsNull() && !data.Addresses.IsUnknown() {
+		data.Addresses.ElementsAs(ctx, &addresses, false)
 	}
+	currentHost.Addresses = addresses
 
-	var servicesPayload []hoststore.HostService
-	for _, service := range data.Services {
-		servicesPayload = append(servicesPayload,
-			hoststore.HostService{
-				Service: service.Scheme.ValueString(),
-				Address: service.Address.ValueString(),
-				Port:    int(service.Port.ValueInt64()),
-				// UseForPasswordRotation: service.UseForPasswordRotation.ValueBool(), // FIXME: Not implemented in privx-sdk-go v1.29.0
-			})
+	// Convert tags list to string slice and sort for consistency
+	var tags []string
+	if !data.Tags.IsNull() && !data.Tags.IsUnknown() {
+		data.Tags.ElementsAs(ctx, &tags, false)
+		sort.Strings(tags) // Sort to ensure consistent ordering
 	}
+	currentHost.Tags = tags
 
-	var principalsPayload []hoststore.Principal
-	for _, principal := range data.Principals {
-		var rolesPayload []rolestore.RoleHandle
-		for _, role := range principal.Roles {
-			rolesPayload = append(rolesPayload,
-				rolestore.RoleHandle{
-					ID: role.ID.ValueString(),
+	// Convert services
+	var services []hoststore.HostService
+	for _, sm := range data.Services {
+		service := hoststore.HostService{
+			Service:                sm.Service.ValueString(),
+			Address:                sm.Address.ValueString(),
+			Port:                   int(sm.Port.ValueInt64()),
+			UseForPasswordRotation: sm.UseForPasswordRotation.ValueBool(),
+			TunnelPort:             int(sm.SSHTunnelPort.ValueInt64()),
+			UsePlainTextVNC:        sm.UsePlaintextVNC.ValueBool(),
+			Source:                 sm.Source.ValueString(),
+		}
+		services = append(services, service)
+	}
+	currentHost.Services = services
+
+	// Convert principals
+	var principals []hoststore.HostPrincipals
+	for _, pm := range data.Principals {
+		principal := hoststore.HostPrincipals{
+			Principal:              pm.Principal.ValueString(),
+			Passphrase:             pm.Passphrase.ValueString(),
+			Rotate:                 pm.Rotate.ValueBool(),
+			UseForPasswordRotation: pm.UseForPasswordRotation.ValueBool(),
+			UsernameAttribute:      pm.UsernameAttribute.ValueString(),
+			UseUserAccount:         pm.UseUserAccount.ValueBool(),
+			Source:                 pm.Source.ValueString(),
+		}
+
+		// Convert roles
+		if !pm.Roles.IsNull() && !pm.Roles.IsUnknown() {
+			var roleModels []RoleModel
+			pm.Roles.ElementsAs(ctx, &roleModels, false)
+
+			for _, rm := range roleModels {
+				role := hoststore.HostRole{
+					ID:   rm.ID.ValueString(),
+					Name: rm.Name.ValueString(),
+				}
+				principal.Roles = append(principal.Roles, role)
+			}
+		}
+
+		// Convert applications
+		if !pm.Applications.IsNull() && !pm.Applications.IsUnknown() {
+			var apps []string
+			pm.Applications.ElementsAs(ctx, &apps, false)
+			for _, app := range apps {
+				principal.Applications = append(principal.Applications, hoststore.HostPrincipalApplications{
+					Name: app,
 				})
+			}
 		}
-		/* FIXME: object application not implemented, principal only takes []string.
-		var applicationsPayload []hoststore.Application
-		for _, application := range principal.Applications {
-			applicationsPayload = append(applicationsPayload,
-			hoststore.Application {
-				Name: application.Name.ValueString(),
-				Application: application.Applictaion.ValueString(),
-				Arguments: application.Arguments.ValueString(),
-				WorkingDirectory: application.WorkingDirectory.ValueString(),
-			})
+
+		// Convert service options
+		if !pm.ServiceOptions.IsNull() && !pm.ServiceOptions.IsUnknown() {
+			var serviceOptionsModel ServiceOptionsModel
+			pm.ServiceOptions.As(ctx, &serviceOptionsModel, basetypes.ObjectAsOptions{})
+
+			serviceOptions := &hoststore.HostServiceOptions{}
+
+			// SSH options
+			if !serviceOptionsModel.SSH.IsNull() && !serviceOptionsModel.SSH.IsUnknown() {
+				var sshModel SSHOptionsModel
+				serviceOptionsModel.SSH.As(ctx, &sshModel, basetypes.ObjectAsOptions{})
+				serviceOptions.SSHServiceOptions = &hoststore.SSHServiceOptions{
+					Shell:        sshModel.Shell.ValueBool(),
+					FileTransfer: sshModel.FileTransfer.ValueBool(),
+					Exec:         sshModel.Exec.ValueBool(),
+					Tunnels:      sshModel.Tunnels.ValueBool(),
+					X11:          sshModel.X11.ValueBool(),
+					Other:        sshModel.Other.ValueBool(),
+				}
+			}
+
+			// RDP options
+			if !serviceOptionsModel.RDP.IsNull() && !serviceOptionsModel.RDP.IsUnknown() {
+				var rdpModel RDPOptionsModel
+				serviceOptionsModel.RDP.As(ctx, &rdpModel, basetypes.ObjectAsOptions{})
+				serviceOptions.RDPServiceOptions = &hoststore.RDPServiceOptions{
+					FileTransfer: rdpModel.FileTransfer.ValueBool(),
+					Audio:        rdpModel.Audio.ValueBool(),
+					Clipboard:    rdpModel.Clipboard.ValueBool(),
+				}
+			}
+
+			// Web options
+			if !serviceOptionsModel.Web.IsNull() && !serviceOptionsModel.Web.IsUnknown() {
+				var webModel WebOptionsModel
+				serviceOptionsModel.Web.As(ctx, &webModel, basetypes.ObjectAsOptions{})
+				serviceOptions.WebServiceOptions = &hoststore.WebServiceOptions{
+					FileTransfer: webModel.FileTransfer.ValueBool(),
+					Audio:        webModel.Audio.ValueBool(),
+					Clipboard:    webModel.Clipboard.ValueBool(),
+				}
+			}
+
+			// VNC options
+			if !serviceOptionsModel.VNC.IsNull() && !serviceOptionsModel.VNC.IsUnknown() {
+				var vncModel VNCOptionsModel
+				serviceOptionsModel.VNC.As(ctx, &vncModel, basetypes.ObjectAsOptions{})
+				serviceOptions.VNCServiceOptions = &hoststore.VNCServiceOptions{
+					FileTransfer: vncModel.FileTransfer.ValueBool(),
+					Clipboard:    vncModel.Clipboard.ValueBool(),
+				}
+			}
+
+			// DB options
+			if !serviceOptionsModel.DB.IsNull() && !serviceOptionsModel.DB.IsUnknown() {
+				var dbModel DBOptionsModel
+				serviceOptionsModel.DB.As(ctx, &dbModel, basetypes.ObjectAsOptions{})
+				serviceOptions.DBServiceOptions = &hoststore.DBServiceOptions{
+					MaxBytesUpload:   dbModel.MaxBytesUpload.ValueInt64(),
+					MaxBytesDownload: dbModel.MaxBytesDownload.ValueInt64(),
+				}
+			}
+
+			principal.ServiceOptions = serviceOptions
 		}
-		*/
-		principalsPayload = append(principalsPayload,
-			hoststore.Principal{
-				ID:             principal.ID.ValueString(),
-				UseUserAccount: principal.UseUserAccount.ValueBool(),
-				Passphrase:     principal.Passphrase.ValueString(),
-				Roles:          rolesPayload,
-			})
-	}
 
-	var publicKeysPayload []hoststore.HostSSHPubKeys
-	for _, SSHKey := range data.PublicKeys {
-		publicKeysPayload = append(publicKeysPayload,
-			hoststore.HostSSHPubKeys{
-				Key: SSHKey.Key.ValueString(),
-			})
-	}
+		// Convert command restrictions
+		if !pm.CommandRestrictions.IsNull() && !pm.CommandRestrictions.IsUnknown() {
+			var commandRestrictionsModel CommandRestrictionsModel
+			pm.CommandRestrictions.As(ctx, &commandRestrictionsModel, basetypes.ObjectAsOptions{})
 
-	// Convert principals to the correct SDK v2 format
-	var principalsSDKPayload []hoststore.HostPrincipals
-	for _, principal := range principalsPayload {
-		var rolesSDK []hoststore.HostRole
-		for _, role := range principal.Roles {
-			rolesSDK = append(rolesSDK, hoststore.HostRole{
-				ID: role.ID,
-			})
+			commandRestrictions := hoststore.HostCommandRestrictions{
+				Enabled:       commandRestrictionsModel.Enabled.ValueBool(),
+				RShellVariant: commandRestrictionsModel.RShellVariant.ValueString(),
+				AllowNoMatch:  commandRestrictionsModel.AllowNoMatch.ValueBool(),
+				AuditMatch:    commandRestrictionsModel.AuditMatch.ValueBool(),
+				AuditNoMatch:  commandRestrictionsModel.AuditNoMatch.ValueBool(),
+				Banner:        commandRestrictionsModel.Banner.ValueString(),
+			}
+
+			// Convert default whitelist
+			if !commandRestrictionsModel.DefaultWhitelist.IsNull() && !commandRestrictionsModel.DefaultWhitelist.IsUnknown() {
+				var defaultWhitelistModel WhitelistHandleModel
+				commandRestrictionsModel.DefaultWhitelist.As(ctx, &defaultWhitelistModel, basetypes.ObjectAsOptions{})
+				commandRestrictions.DefaultWhiteList = hoststore.WhiteListHandle{
+					ID:   defaultWhitelistModel.ID.ValueString(),
+					Name: defaultWhitelistModel.Name.ValueString(),
+				}
+			}
+
+			// Convert whitelists
+			if !commandRestrictionsModel.Whitelists.IsNull() && !commandRestrictionsModel.Whitelists.IsUnknown() {
+				var whitelistGrantModels []WhitelistGrantModel
+				commandRestrictionsModel.Whitelists.ElementsAs(ctx, &whitelistGrantModels, false)
+
+				for _, wgm := range whitelistGrantModels {
+					whitelistGrant := hoststore.WhiteListGrant{}
+
+					// Convert whitelist handle
+					if !wgm.Whitelist.IsNull() && !wgm.Whitelist.IsUnknown() {
+						var whitelistHandleModel WhitelistHandleModel
+						wgm.Whitelist.As(ctx, &whitelistHandleModel, basetypes.ObjectAsOptions{})
+						whitelistGrant.WhiteList = hoststore.WhiteListHandle{
+							ID:   whitelistHandleModel.ID.ValueString(),
+							Name: whitelistHandleModel.Name.ValueString(),
+						}
+					}
+
+					// Convert roles
+					if !wgm.Roles.IsNull() && !wgm.Roles.IsUnknown() {
+						var roleModels []RoleModel
+						wgm.Roles.ElementsAs(ctx, &roleModels, false)
+
+						for _, rm := range roleModels {
+							role := hoststore.HostRole{
+								ID:   rm.ID.ValueString(),
+								Name: rm.Name.ValueString(),
+							}
+							whitelistGrant.Roles = append(whitelistGrant.Roles, role)
+						}
+					}
+
+					commandRestrictions.WhiteLists = append(commandRestrictions.WhiteLists, whitelistGrant)
+				}
+			}
+
+			principal.CommandRestrictions = commandRestrictions
 		}
-		principalsSDKPayload = append(principalsSDKPayload, hoststore.HostPrincipals{
-			Principal:      principal.ID,
-			UseUserAccount: principal.UseUserAccount,
-			Passphrase:     principal.Passphrase,
-			Source:         principal.Source,
-			Roles:          rolesSDK,
-		})
+
+		principals = append(principals, principal)
+	}
+	currentHost.Principals = principals
+
+	// Convert SSH host public keys
+	var sshHostPublicKeys []hoststore.HostSSHPubKeys
+	if !data.SSHHostPublicKeys.IsNull() && !data.SSHHostPublicKeys.IsUnknown() {
+		var keyModels []SSHHostPublicKeyModel
+		data.SSHHostPublicKeys.ElementsAs(ctx, &keyModels, false)
+
+		for _, km := range keyModels {
+			key := hoststore.HostSSHPubKeys{
+				Key:         km.Key.ValueString(),
+				FingerPrint: km.Fingerprint.ValueString(),
+			}
+			sshHostPublicKeys = append(sshHostPublicKeys, key)
+		}
+	}
+	currentHost.SSHHostPubKeys = sshHostPublicKeys
+
+	// Convert session recording options
+	if !data.SessionRecordingOptions.IsNull() && !data.SessionRecordingOptions.IsUnknown() {
+		var sroModel SessionRecordingOptionsModel
+		diags := data.SessionRecordingOptions.As(ctx, &sroModel, basetypes.ObjectAsOptions{})
+		if diags.HasError() {
+			resp.Diagnostics.Append(diags...)
+			return
+		}
+
+		currentHost.SessionRecordingOptions = &hoststore.SessionRecordingOptions{
+			DisableClipboardRecording:    sroModel.DisableClipboardRecording.ValueBool(),
+			DisableFileTransferRecording: sroModel.DisableFileTransferRecording.ValueBool(),
+		}
 	}
 
-	// Convert boolean values to pointers as required by SDK v2
-	tofuPtr := data.Tofu.ValueBool()
-	auditPtr := data.Audit.ValueBool()
+	tflog.Debug(ctx, fmt.Sprintf("hoststore.Host model used for update: %+v", currentHost))
 
-	host := hoststore.Host{
-		AccessGroupID:       data.AccessGroupID.ValueString(),
-		ExternalID:          data.ExternalID.ValueString(),
-		InstanceID:          data.InstanceID.ValueString(),
-		CommonName:          data.Name.ValueString(),
-		ContactAddress:      data.ContactAddress.ValueString(),
-		CloudProvider:       data.CloudProvider.ValueString(),
-		CloudProviderRegion: data.CloudProviderRegion.ValueString(),
-		DistinguishedName:   data.DistinguishedName.ValueString(),
-		Organization:        data.Organization.ValueString(),
-		OrganizationalUnit:  data.OrganizationUnit.ValueString(),
-		Zone:                data.Zone.ValueString(),
-		HostType:            data.HostType.ValueString(),
-		HostClassification:  data.HostClassification.ValueString(),
-		Comment:             data.Comment.ValueString(),
-		Tofu:                &tofuPtr,
-		StandAloneHost:      data.StandAlone.ValueBool(),
-		AuditEnabled:        &auditPtr,
-		Scope:               scopePayload,
-		Tags:                tagsPayload,
-		Addresses:           addressesPayload,
-		Services:            servicesPayload,
-		Principals:          principalsSDKPayload,
-		SSHHostPubKeys:      publicKeysPayload,
-	}
-
-	tflog.Debug(ctx, fmt.Sprintf("hoststore.Host model used: %+v", host))
-
-	err := r.client.UpdateHost(
-		data.ID.ValueString(),
-		&host)
-
+	err = r.client.UpdateHost(data.ID.ValueString(), currentHost)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update host, got error: %s", err))
 		return
 	}
 
-	// Save updated data into Terraform state
+	// Read back the updated resource to populate all computed fields
+	hostRead, err := r.client.GetHost(data.ID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read updated host, got error: %s", err))
+		return
+	}
+
+	r.populateHostModel(ctx, data, hostRead)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *HostResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var data *HostResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	err := r.client.DeleteHost(data.ID.ValueString())
-
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete host, got error: %s", err))
 		return
@@ -1101,4 +1435,535 @@ func (r *HostResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 
 func (r *HostResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// populateHostModel populates the Terraform model from the API response
+func (r *HostResource) populateHostModel(ctx context.Context, data *HostResourceModel, host *hoststore.Host) {
+	data.CommonName = types.StringValue(host.CommonName)
+	data.ExternalID = types.StringValue(host.ExternalID)
+	data.InstanceID = types.StringValue(host.InstanceID)
+	data.SourceID = types.StringValue(host.SourceID)
+	data.AccessGroupID = types.StringValue(host.AccessGroupID)
+	data.CloudProvider = types.StringValue(host.CloudProvider)
+	data.CloudProviderRegion = types.StringValue(host.CloudProviderRegion)
+	data.DistinguishedName = types.StringValue(host.DistinguishedName)
+	data.Organization = types.StringValue(host.Organization)
+	data.OrganizationalUnit = types.StringValue(host.OrganizationalUnit)
+	data.Zone = types.StringValue(host.Zone)
+	data.HostType = types.StringValue(host.HostType)
+	data.HostClassification = types.StringValue(host.HostClassification)
+	data.Comment = types.StringValue(host.Comment)
+	data.UserMessage = types.StringValue(host.UserMessage)
+	data.Disabled = types.StringValue(host.Disabled)
+	if host.Deployable != nil {
+		data.Deployable = types.BoolValue(*host.Deployable)
+	} else {
+		data.Deployable = types.BoolValue(false)
+	}
+	if host.Tofu != nil {
+		data.Tofu = types.BoolValue(*host.Tofu)
+	} else {
+		data.Tofu = types.BoolValue(false)
+	}
+	if host.Toch != nil {
+		data.Toch = types.BoolValue(*host.Toch)
+	} else {
+		data.Toch = types.BoolValue(false)
+	}
+	if host.AuditEnabled != nil {
+		data.AuditEnabled = types.BoolValue(*host.AuditEnabled)
+	} else {
+		data.AuditEnabled = types.BoolValue(false)
+	}
+	data.PasswordRotationEnabled = types.BoolValue(host.PasswordRotationEnabled)
+	data.ContactAddress = types.StringValue(host.ContactAddress)
+	data.Created = types.StringValue(host.Created)
+	data.Updated = types.StringValue(host.Updated)
+	data.UpdatedBy = types.StringValue(host.UpdatedBy)
+
+	// Convert addresses slice to list
+	addressValues := make([]attr.Value, len(host.Addresses))
+	for i, addr := range host.Addresses {
+		addressValues[i] = types.StringValue(addr)
+	}
+	data.Addresses = types.ListValueMust(types.StringType, addressValues)
+
+	// Convert tags slice to list - preserve original order if possible, otherwise sort
+	var finalTags []string
+	if !data.Tags.IsNull() && !data.Tags.IsUnknown() {
+		// Try to preserve the original configuration order
+		var originalTags []string
+		data.Tags.ElementsAs(ctx, &originalTags, false)
+
+		// Check if the API response contains the same tags (ignoring order)
+		if tagsContainSameElements(originalTags, host.Tags) {
+			// Use original order if the tags are the same
+			finalTags = originalTags
+		} else {
+			// Different tags, use API response sorted
+			finalTags = make([]string, len(host.Tags))
+			copy(finalTags, host.Tags)
+			sort.Strings(finalTags)
+		}
+	} else {
+		// No original tags, use API response sorted
+		finalTags = make([]string, len(host.Tags))
+		copy(finalTags, host.Tags)
+		sort.Strings(finalTags)
+	}
+
+	tagValues := make([]attr.Value, len(finalTags))
+	for i, tag := range finalTags {
+		tagValues[i] = types.StringValue(tag)
+	}
+	data.Tags = types.ListValueMust(types.StringType, tagValues)
+
+	// Convert services - use API response directly to avoid consistency issues
+	data.Services = make([]ServiceModel, len(host.Services))
+	for i, service := range host.Services {
+		data.Services[i] = ServiceModel{
+			Service:                types.StringValue(service.Service),
+			Address:                types.StringValue(service.Address),
+			Port:                   types.Int64Value(int64(service.Port)),
+			UseForPasswordRotation: types.BoolValue(service.UseForPasswordRotation),
+			SSHTunnelPort:          types.Int64Value(int64(service.TunnelPort)),
+			UsePlaintextVNC:        types.BoolValue(service.UsePlainTextVNC),
+			Source:                 types.StringValue(service.Source),
+		}
+	}
+
+	// Convert principals - preserve original passphrase values to avoid sensitive attribute issues
+	originalPrincipals := data.Principals // Save original principals
+	data.Principals = make([]PrincipalModel, len(host.Principals))
+
+	for i, principal := range host.Principals {
+		// Convert roles for this principal
+		roleValues := make([]attr.Value, len(principal.Roles))
+		for j, role := range principal.Roles {
+			roleAttrs := map[string]attr.Value{
+				"id":   types.StringValue(role.ID),
+				"name": types.StringValue(role.Name),
+			}
+			roleValues[j] = types.ObjectValueMust(map[string]attr.Type{
+				"id":   types.StringType,
+				"name": types.StringType,
+			}, roleAttrs)
+		}
+
+		// Convert applications for this principal
+		appValues := make([]attr.Value, len(principal.Applications))
+		for j, app := range principal.Applications {
+			appValues[j] = types.StringValue(app.Name)
+		}
+
+		// Find the original passphrase value by matching principal name
+		// Since API returns masked value, preserve original to avoid showing changes
+		passphraseValue := types.StringValue("") // Default
+		for _, origPrincipal := range originalPrincipals {
+			if origPrincipal.Principal.ValueString() == principal.Principal {
+				// Preserve original passphrase since API returns masked value
+				passphraseValue = origPrincipal.Passphrase
+				break
+			}
+		}
+
+		// Convert service options for this principal
+		var serviceOptionsValue types.Object
+		if principal.ServiceOptions != nil {
+			serviceOptionsAttrs := map[string]attr.Value{}
+
+			// SSH options
+			if principal.ServiceOptions.SSHServiceOptions != nil {
+				sshAttrs := map[string]attr.Value{
+					"shell":         types.BoolValue(principal.ServiceOptions.SSHServiceOptions.Shell),
+					"file_transfer": types.BoolValue(principal.ServiceOptions.SSHServiceOptions.FileTransfer),
+					"exec":          types.BoolValue(principal.ServiceOptions.SSHServiceOptions.Exec),
+					"tunnels":       types.BoolValue(principal.ServiceOptions.SSHServiceOptions.Tunnels),
+					"x11":           types.BoolValue(principal.ServiceOptions.SSHServiceOptions.X11),
+					"other":         types.BoolValue(principal.ServiceOptions.SSHServiceOptions.Other),
+				}
+				serviceOptionsAttrs["ssh"] = types.ObjectValueMust(map[string]attr.Type{
+					"shell":         types.BoolType,
+					"file_transfer": types.BoolType,
+					"exec":          types.BoolType,
+					"tunnels":       types.BoolType,
+					"x11":           types.BoolType,
+					"other":         types.BoolType,
+				}, sshAttrs)
+			} else {
+				serviceOptionsAttrs["ssh"] = types.ObjectNull(map[string]attr.Type{
+					"shell":         types.BoolType,
+					"file_transfer": types.BoolType,
+					"exec":          types.BoolType,
+					"tunnels":       types.BoolType,
+					"x11":           types.BoolType,
+					"other":         types.BoolType,
+				})
+			}
+
+			// RDP options
+			if principal.ServiceOptions.RDPServiceOptions != nil {
+				rdpAttrs := map[string]attr.Value{
+					"file_transfer": types.BoolValue(principal.ServiceOptions.RDPServiceOptions.FileTransfer),
+					"audio":         types.BoolValue(principal.ServiceOptions.RDPServiceOptions.Audio),
+					"clipboard":     types.BoolValue(principal.ServiceOptions.RDPServiceOptions.Clipboard),
+				}
+				serviceOptionsAttrs["rdp"] = types.ObjectValueMust(map[string]attr.Type{
+					"file_transfer": types.BoolType,
+					"audio":         types.BoolType,
+					"clipboard":     types.BoolType,
+				}, rdpAttrs)
+			} else {
+				serviceOptionsAttrs["rdp"] = types.ObjectNull(map[string]attr.Type{
+					"file_transfer": types.BoolType,
+					"audio":         types.BoolType,
+					"clipboard":     types.BoolType,
+				})
+			}
+
+			// Web options
+			if principal.ServiceOptions.WebServiceOptions != nil {
+				webAttrs := map[string]attr.Value{
+					"file_transfer": types.BoolValue(principal.ServiceOptions.WebServiceOptions.FileTransfer),
+					"audio":         types.BoolValue(principal.ServiceOptions.WebServiceOptions.Audio),
+					"clipboard":     types.BoolValue(principal.ServiceOptions.WebServiceOptions.Clipboard),
+				}
+				serviceOptionsAttrs["web"] = types.ObjectValueMust(map[string]attr.Type{
+					"file_transfer": types.BoolType,
+					"audio":         types.BoolType,
+					"clipboard":     types.BoolType,
+				}, webAttrs)
+			} else {
+				serviceOptionsAttrs["web"] = types.ObjectNull(map[string]attr.Type{
+					"file_transfer": types.BoolType,
+					"audio":         types.BoolType,
+					"clipboard":     types.BoolType,
+				})
+			}
+
+			// VNC options
+			if principal.ServiceOptions.VNCServiceOptions != nil {
+				vncAttrs := map[string]attr.Value{
+					"file_transfer": types.BoolValue(principal.ServiceOptions.VNCServiceOptions.FileTransfer),
+					"clipboard":     types.BoolValue(principal.ServiceOptions.VNCServiceOptions.Clipboard),
+				}
+				serviceOptionsAttrs["vnc"] = types.ObjectValueMust(map[string]attr.Type{
+					"file_transfer": types.BoolType,
+					"clipboard":     types.BoolType,
+				}, vncAttrs)
+			} else {
+				serviceOptionsAttrs["vnc"] = types.ObjectNull(map[string]attr.Type{
+					"file_transfer": types.BoolType,
+					"clipboard":     types.BoolType,
+				})
+			}
+
+			// DB options
+			if principal.ServiceOptions.DBServiceOptions != nil {
+				dbAttrs := map[string]attr.Value{
+					"max_bytes_upload":   types.Int64Value(principal.ServiceOptions.DBServiceOptions.MaxBytesUpload),
+					"max_bytes_download": types.Int64Value(principal.ServiceOptions.DBServiceOptions.MaxBytesDownload),
+				}
+				serviceOptionsAttrs["db"] = types.ObjectValueMust(map[string]attr.Type{
+					"max_bytes_upload":   types.Int64Type,
+					"max_bytes_download": types.Int64Type,
+				}, dbAttrs)
+			} else {
+				serviceOptionsAttrs["db"] = types.ObjectNull(map[string]attr.Type{
+					"max_bytes_upload":   types.Int64Type,
+					"max_bytes_download": types.Int64Type,
+				})
+			}
+
+			serviceOptionsValue = types.ObjectValueMust(map[string]attr.Type{
+				"ssh": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"shell":         types.BoolType,
+						"file_transfer": types.BoolType,
+						"exec":          types.BoolType,
+						"tunnels":       types.BoolType,
+						"x11":           types.BoolType,
+						"other":         types.BoolType,
+					},
+				},
+				"rdp": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"file_transfer": types.BoolType,
+						"audio":         types.BoolType,
+						"clipboard":     types.BoolType,
+					},
+				},
+				"web": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"file_transfer": types.BoolType,
+						"audio":         types.BoolType,
+						"clipboard":     types.BoolType,
+					},
+				},
+				"vnc": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"file_transfer": types.BoolType,
+						"clipboard":     types.BoolType,
+					},
+				},
+				"db": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"max_bytes_upload":   types.Int64Type,
+						"max_bytes_download": types.Int64Type,
+					},
+				},
+			}, serviceOptionsAttrs)
+		} else {
+			serviceOptionsValue = types.ObjectNull(map[string]attr.Type{
+				"ssh": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"shell":         types.BoolType,
+						"file_transfer": types.BoolType,
+						"exec":          types.BoolType,
+						"tunnels":       types.BoolType,
+						"x11":           types.BoolType,
+						"other":         types.BoolType,
+					},
+				},
+				"rdp": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"file_transfer": types.BoolType,
+						"audio":         types.BoolType,
+						"clipboard":     types.BoolType,
+					},
+				},
+				"web": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"file_transfer": types.BoolType,
+						"audio":         types.BoolType,
+						"clipboard":     types.BoolType,
+					},
+				},
+				"vnc": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"file_transfer": types.BoolType,
+						"clipboard":     types.BoolType,
+					},
+				},
+				"db": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"max_bytes_upload":   types.Int64Type,
+						"max_bytes_download": types.Int64Type,
+					},
+				},
+			})
+		}
+
+		// Convert command restrictions for this principal
+		var commandRestrictionsValue types.Object
+		commandRestrictionsAttrs := map[string]attr.Value{
+			"enabled":        types.BoolValue(principal.CommandRestrictions.Enabled),
+			"rshell_variant": types.StringValue(principal.CommandRestrictions.RShellVariant),
+			"allow_no_match": types.BoolValue(principal.CommandRestrictions.AllowNoMatch),
+			"audit_match":    types.BoolValue(principal.CommandRestrictions.AuditMatch),
+			"audit_no_match": types.BoolValue(principal.CommandRestrictions.AuditNoMatch),
+			"banner":         types.StringValue(principal.CommandRestrictions.Banner),
+		}
+
+		// Convert default whitelist
+		defaultWhitelistAttrs := map[string]attr.Value{
+			"id":   types.StringValue(principal.CommandRestrictions.DefaultWhiteList.ID),
+			"name": types.StringValue(principal.CommandRestrictions.DefaultWhiteList.Name),
+		}
+		commandRestrictionsAttrs["default_whitelist"] = types.ObjectValueMust(map[string]attr.Type{
+			"id":   types.StringType,
+			"name": types.StringType,
+		}, defaultWhitelistAttrs)
+
+		// Convert whitelists
+		whitelistValues := make([]attr.Value, len(principal.CommandRestrictions.WhiteLists))
+		for j, whitelistGrant := range principal.CommandRestrictions.WhiteLists {
+			// Convert whitelist handle
+			whitelistHandleAttrs := map[string]attr.Value{
+				"id":   types.StringValue(whitelistGrant.WhiteList.ID),
+				"name": types.StringValue(whitelistGrant.WhiteList.Name),
+			}
+
+			// Convert roles for this whitelist
+			whitelistRoleValues := make([]attr.Value, len(whitelistGrant.Roles))
+			for k, role := range whitelistGrant.Roles {
+				roleAttrs := map[string]attr.Value{
+					"id":   types.StringValue(role.ID),
+					"name": types.StringValue(role.Name),
+				}
+				whitelistRoleValues[k] = types.ObjectValueMust(map[string]attr.Type{
+					"id":   types.StringType,
+					"name": types.StringType,
+				}, roleAttrs)
+			}
+
+			whitelistGrantAttrs := map[string]attr.Value{
+				"whitelist": types.ObjectValueMust(map[string]attr.Type{
+					"id":   types.StringType,
+					"name": types.StringType,
+				}, whitelistHandleAttrs),
+				"roles": types.ListValueMust(types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"id":   types.StringType,
+						"name": types.StringType,
+					},
+				}, whitelistRoleValues),
+			}
+
+			whitelistValues[j] = types.ObjectValueMust(map[string]attr.Type{
+				"whitelist": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"id":   types.StringType,
+						"name": types.StringType,
+					},
+				},
+				"roles": types.ListType{
+					ElemType: types.ObjectType{
+						AttrTypes: map[string]attr.Type{
+							"id":   types.StringType,
+							"name": types.StringType,
+						},
+					},
+				},
+			}, whitelistGrantAttrs)
+		}
+
+		commandRestrictionsAttrs["whitelists"] = types.ListValueMust(types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"whitelist": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"id":   types.StringType,
+						"name": types.StringType,
+					},
+				},
+				"roles": types.ListType{
+					ElemType: types.ObjectType{
+						AttrTypes: map[string]attr.Type{
+							"id":   types.StringType,
+							"name": types.StringType,
+						},
+					},
+				},
+			},
+		}, whitelistValues)
+
+		commandRestrictionsValue = types.ObjectValueMust(map[string]attr.Type{
+			"enabled":        types.BoolType,
+			"rshell_variant": types.StringType,
+			"allow_no_match": types.BoolType,
+			"audit_match":    types.BoolType,
+			"audit_no_match": types.BoolType,
+			"banner":         types.StringType,
+			"default_whitelist": types.ObjectType{
+				AttrTypes: map[string]attr.Type{
+					"id":   types.StringType,
+					"name": types.StringType,
+				},
+			},
+			"whitelists": types.ListType{
+				ElemType: types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"whitelist": types.ObjectType{
+							AttrTypes: map[string]attr.Type{
+								"id":   types.StringType,
+								"name": types.StringType,
+							},
+						},
+						"roles": types.ListType{
+							ElemType: types.ObjectType{
+								AttrTypes: map[string]attr.Type{
+									"id":   types.StringType,
+									"name": types.StringType,
+								},
+							},
+						},
+					},
+				},
+			},
+		}, commandRestrictionsAttrs)
+
+		data.Principals[i] = PrincipalModel{
+			Principal:              types.StringValue(principal.Principal),
+			Passphrase:             passphraseValue, // Preserve original passphrase
+			Rotate:                 types.BoolValue(principal.Rotate),
+			UseForPasswordRotation: types.BoolValue(principal.UseForPasswordRotation),
+			UsernameAttribute:      types.StringValue(principal.UsernameAttribute),
+			UseUserAccount:         types.BoolValue(principal.UseUserAccount),
+			Source:                 types.StringValue(principal.Source),
+			Roles: types.ListValueMust(types.ObjectType{
+				AttrTypes: map[string]attr.Type{
+					"id":   types.StringType,
+					"name": types.StringType,
+				},
+			}, roleValues),
+			Applications:        types.ListValueMust(types.StringType, appValues),
+			ServiceOptions:      serviceOptionsValue,
+			CommandRestrictions: commandRestrictionsValue,
+		}
+	}
+
+	// Convert SSH host public keys
+	keyValues := make([]attr.Value, len(host.SSHHostPubKeys))
+	for i, key := range host.SSHHostPubKeys {
+		keyAttrs := map[string]attr.Value{
+			"key":         types.StringValue(key.Key),
+			"fingerprint": types.StringValue(key.FingerPrint),
+		}
+		keyValues[i] = types.ObjectValueMust(map[string]attr.Type{
+			"key":         types.StringType,
+			"fingerprint": types.StringType,
+		}, keyAttrs)
+	}
+	data.SSHHostPublicKeys = types.ListValueMust(types.ObjectType{
+		AttrTypes: map[string]attr.Type{
+			"key":         types.StringType,
+			"fingerprint": types.StringType,
+		},
+	}, keyValues)
+
+	// Convert session recording options
+	var sroAttrs map[string]attr.Value
+	if host.SessionRecordingOptions != nil {
+		sroAttrs = map[string]attr.Value{
+			"disable_clipboard_recording":     types.BoolValue(host.SessionRecordingOptions.DisableClipboardRecording),
+			"disable_file_transfer_recording": types.BoolValue(host.SessionRecordingOptions.DisableFileTransferRecording),
+		}
+	} else {
+		sroAttrs = map[string]attr.Value{
+			"disable_clipboard_recording":     types.BoolValue(false),
+			"disable_file_transfer_recording": types.BoolValue(false),
+		}
+	}
+	data.SessionRecordingOptions = types.ObjectValueMust(map[string]attr.Type{
+		"disable_clipboard_recording":     types.BoolType,
+		"disable_file_transfer_recording": types.BoolType,
+	}, sroAttrs)
+}
+
+// tagsContainSameElements checks if two tag slices contain the same elements (ignoring order)
+func tagsContainSameElements(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	// Create maps to count occurrences
+	countA := make(map[string]int)
+	countB := make(map[string]int)
+
+	for _, tag := range a {
+		countA[tag]++
+	}
+
+	for _, tag := range b {
+		countB[tag]++
+	}
+
+	// Compare the maps
+	for tag, count := range countA {
+		if countB[tag] != count {
+			return false
+		}
+	}
+
+	return true
 }

@@ -2,7 +2,10 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/authorizer"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
@@ -19,98 +22,123 @@ func NewExtenderConfigDataSource() datasource.DataSource {
 	return &ExtenderConfigDataSource{}
 }
 
-// ExtenderConfigDataSource defines the DataSource implementation.
+// ExtenderConfigDataSource defines the data source implementation.
 type ExtenderConfigDataSource struct {
-	client    *authorizer.Authorizer
-	connector *restapi.Connector
+	client *authorizer.Authorizer
 }
 
-// ExtenderConfig contains PrivX ExtenderConfig information.
+// ExtenderConfigDataSourceModel describes the data source data model.
 type ExtenderConfigDataSourceModel struct {
-	TrustedClientID types.String `tfsdk:"trusted_client_id"`
-	ExtenderConfig  types.String `tfsdk:"extender_config"`
+	ID        types.String `tfsdk:"id"`
+	SessionID types.String `tfsdk:"session_id"`
+	Config    types.String `tfsdk:"config"`
 }
 
-func (r *ExtenderConfigDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+func (d *ExtenderConfigDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_extender_config"
 }
 
-func (r *ExtenderConfigDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+func (d *ExtenderConfigDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "ExtenderConfig DataSource",
+		MarkdownDescription: "PrivX Extender Configuration data source",
 		Attributes: map[string]schema.Attribute{
-			"trusted_client_id": schema.StringAttribute{
-				MarkdownDescription: "ExtenderConfig ID",
+			"id": schema.StringAttribute{
+				MarkdownDescription: "Extender ID",
 				Required:            true,
 			},
-			"extender_config": schema.StringAttribute{
-				MarkdownDescription: "Extender config",
+			"session_id": schema.StringAttribute{
+				MarkdownDescription: "Extender configuration session ID",
+				Computed:            true,
+			},
+			"config": schema.StringAttribute{
+				MarkdownDescription: "Extender configuration content",
 				Computed:            true,
 			},
 		},
 	}
 }
 
-func (r *ExtenderConfigDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
+func (d *ExtenderConfigDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
 
 	connector, ok := req.ProviderData.(*restapi.Connector)
-
 	if !ok {
 		resp.Diagnostics.AddError(
-			"Unexpected DataSource Configure Type",
+			"Unexpected Data Source Configure Type",
 			fmt.Sprintf("Expected *restapi.Connector, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}
-	tflog.Debug(ctx, "Creating userstore", map[string]interface{}{
-		"connector : ": fmt.Sprintf("%+v", *connector),
+
+	tflog.Debug(ctx, "Creating authorizer client", map[string]interface{}{
+		"connector": fmt.Sprintf("%+v", *connector),
 	})
 
-	r.connector = connector
-
-	r.client = authorizer.New(*connector)
+	d.client = authorizer.New(*connector)
 }
 
-func (r *ExtenderConfigDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data *ExtenderConfigDataSourceModel
+func (d *ExtenderConfigDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data ExtenderConfigDataSourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	DownloadHandle, err := r.client.GetExtenderConfigSessions(data.TrustedClientID.ValueString())
+	extenderID := data.ID.ValueString()
+
+	// Get extender configuration session
+	sessionResponse, err := d.client.GetExtenderConfigSessions(extenderID)
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to get extender download sessionid, got error: %s", err))
-		return
-	}
-	extender_config, err := GetExtenderConfig(*r.connector, data.TrustedClientID.ValueString(), DownloadHandle.SessionID)
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Cannot get extender config: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read extender config session, got error: %s", err))
 		return
 	}
 
-	data.ExtenderConfig = types.StringValue(extender_config)
+	sessionID := sessionResponse.SessionID
+	data.SessionID = types.StringValue(sessionID)
 
-	tflog.Debug(ctx, "Storing ExtenderConfig type into the state", map[string]interface{}{
-		"createNewState": fmt.Sprintf("%+v", data),
+	// Create a temporary file to download the config
+	tempDir, err := os.MkdirTemp("", "privx-extender-config-")
+	if err != nil {
+		resp.Diagnostics.AddError("File System Error", fmt.Sprintf("Unable to create temporary directory, got error: %s", err))
+		return
+	}
+	defer func() {
+		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
+			tflog.Warn(ctx, "Failed to clean up temporary directory", map[string]interface{}{
+				"temp_dir": tempDir,
+				"error":    removeErr.Error(),
+			})
+		}
+	}()
+
+	configFileName := filepath.Join(tempDir, "extender-config.toml")
+
+	// Download the extender configuration
+	err = d.client.DownloadExtenderConfig(extenderID, sessionID, configFileName)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to download extender config, got error: %s", err))
+		return
+	}
+
+	// Read the downloaded config file
+	configContent, err := os.ReadFile(configFileName)
+	if err != nil {
+		resp.Diagnostics.AddError("File System Error", fmt.Sprintf("Unable to read downloaded config file, got error: %s", err))
+		return
+	}
+
+	// Store the config content as base64 encoded string (TOML configuration file)
+	configBase64 := base64.StdEncoding.EncodeToString(configContent)
+	data.Config = types.StringValue(configBase64)
+
+	tflog.Debug(ctx, "Storing extender config into the state", map[string]interface{}{
+		"extender_id": extenderID,
+		"session_id":  sessionID,
+		"config_size": len(configContent),
 	})
-	// Save updated data into Terraform state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
 
-func GetExtenderConfig(restapi_connector restapi.Connector, trusted_client_id, session_id string) (string, error) {
-	curl := restapi_connector.URL(fmt.Sprintf("/authorizer/api/v1/extender/conf/%s/%s", trusted_client_id, session_id))
-	resp, err := curl.Fetch()
-	if err != nil {
-		return "", err
-	}
-	return string(resp), nil
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
