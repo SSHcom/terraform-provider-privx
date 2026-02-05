@@ -27,14 +27,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Generate Software Bill of Materials for security and compliance
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: sbom.cdx.json
-
       # Import GPG key for signing release artifacts
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@v6
