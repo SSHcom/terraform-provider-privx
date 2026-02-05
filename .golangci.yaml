@@ -1,16 +1,20 @@
 # Visit https://golangci-lint.run/ for usage documentation
 # and information on other useful linters
 version: "2"
+
+run:
+  timeout: 5m
+
 issues:
   max-same-issues: 0
+  exclude-dirs:
+    - vendor
+    - pkg/mod
+  exclude-files:
+    - ".*_test\\.go$"
 
 linters:
   disable-all: true
-  settings:
-    revive:
-      rules:
-        - name: unused-parameter
-          disabled: true
   enable:
     - durationcheck
     - errcheck
@@ -29,20 +33,13 @@ linters:
     - gosec
     - revive
     - bodyclose
-  exclusions:
-    paths:
-      - (^|/)vendor(/|$)
-      - (^|/)pkg/mod(/|$)
-      - _test\.go$
-      # If you want to exclude the whole pkg tree instead:
-      # - (^|/)pkg(/|$)
 
-formatters:
-  enable:
-    - gofmt
-
-run:
-  timeout: 5m
+linters-settings:
+  revive:
+    rules:
+      - name: unused-parameter
+        disabled: true
 
 output:
-  format: colored-line-number
+  formats:
+    - format: colored-line-number
