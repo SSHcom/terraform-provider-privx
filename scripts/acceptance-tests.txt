@@ -1,0 +1,20 @@
+# List of acceptance tests to run.
+#   - Empty lines are skipped.
+#   - '#' or '//' lines are skipped (comments).
+#   - Use 'exit' to stop running the remaining tests in the list.
+TestAccLicenseDataSource
+TestAccCarrierResource
+TestAccHostResource
+TestAccApiProxyConfigDataSource
+TestAccApiProxyCredentialResource
+TestAccApiTargetResource
+TestAccApiTargetDataSource
+TestAccAPIClientResource
+TestAccWorkflowResource
+TestAccExtenderResource
+TestAccSecretResource
+TestAccWhitelistResource
+TestAccNetworkTargetResource
+TestAccLocalUserResource
+TestAccRoleDataSource
+TestAccRoleResource

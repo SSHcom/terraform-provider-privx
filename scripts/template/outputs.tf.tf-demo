@@ -1,0 +1,77 @@
+# Example outputs referencing the resources in this demo
+#
+# This file references:
+# - examples/resources/privx_access_group/resource.tf (as privx_access_group.foo)
+# - examples/resources/privx_whitelist/resource.tf (as privx_whitelist.example)
+# - examples/resources/privx_extender/resource.tf (as privx_extender.extender-test)
+#
+# If you modify those example files, update the references below accordingly.
+
+# Output from access group resource
+#output "access_group_id" {
+#  description = "ID of the access group created by Terraform"
+#  value       = privx_access_group.foo.id
+#}
+#
+#output "access_group_name" {
+#  description = "Name of the access group created by Terraform"
+#  value       = privx_access_group.foo.name
+#}
+#
+# Output from whitelist resource
+#output "whitelist_id" {
+#  description = "ID of the whitelist created by Terraform"
+#  value       = privx_whitelist.example.id
+#}
+#
+#output "whitelist_name" {
+#  description = "Name of the whitelist created by Terraform"
+#  value       = privx_whitelist.example.name
+#}
+#
+# Output from extender resource
+#output "extender_id" {
+#  description = "ID of the extender created by Terraform"
+#  value       = privx_extender.extender-test.id
+#}
+
+#output "extender_name" {
+#  description = "Name of the extender created by Terraform"
+#  value       = privx_extender.extender-test.name
+#}
+#
+
+#output "role_name" {
+#  description = "Name of the role created by Terraform"
+#  value       = privx_role.example.name
+#}
+
+#output "secret_name" {
+#  description = "Name of the secret created by Terraform"
+#  value       = privx_secret.example.name
+#}
+
+#output "source_name" {
+#  description = "Name of the source created by Terraform"
+#  value       = privx_source.example.name
+#}
+
+#output "api-client_name" {
+#  description = "Name of the api-client created by Terraform"
+#  value       = privx_api-client.example.name
+#}
+
+#output "carrier_name" {
+#  description = "Name of the carrier created by Terraform"
+#  value       = privx_carrier.example.name
+#}
+
+#output "host_name" {
+#  description = "Name of the host created by Terraform"
+#  value = privx_host.example.common_name
+#}
+
+
+
+
+

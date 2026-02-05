@@ -20,16 +20,25 @@ func testAccPreCheck(t *testing.T) {
 	if v := os.Getenv("PRIVX_API_BASE_URL"); v == "" {
 		t.Fatal("PRIVX_API_BASE_URL must be set for acceptance tests")
 	}
-	if v := os.Getenv("PRIVX_OAUTH_CLIENT_ID"); v == "" {
-		t.Fatal("PRIVX_OAUTH_CLIENT_ID must be set for acceptance tests")
+	if v := os.Getenv("PRIVX_API_OAUTH_CLIENT_ID"); v == "" {
+		t.Fatal("PRIVX_API_OAUTH_CLIENT_ID must be set for acceptance tests")
 	}
-	if v := os.Getenv("PRIVX_OAUTH_CLIENT_SECRET"); v == "" {
-		t.Fatal("PRIVX_OAUTH_CLIENT_SECRET must be set for acceptance tests")
+	if v := os.Getenv("PRIVX_API_OAUTH_CLIENT_SECRET"); v == "" {
+		t.Fatal("PRIVX_API_OAUTH_CLIENT_SECRET must be set for acceptance tests")
 	}
 	if v := os.Getenv("PRIVX_API_CLIENT_ID"); v == "" {
 		t.Fatal("PRIVX_API_CLIENT_ID must be set for acceptance tests")
 	}
 	if v := os.Getenv("PRIVX_API_CLIENT_SECRET"); v == "" {
 		t.Fatal("PRIVX_API_CLIENT_SECRET must be set for acceptance tests")
+	}
+}
+
+func testAccLicensePreCheck(t *testing.T) {
+	if os.Getenv("PRIVX_ACC_LICENSE_TEST") != "true" {
+		t.Skip(
+			"Skipping license acceptance test. " +
+				"Set PRIVX_ACC_LICENSE_TEST=true to enable (this test modifies the PrivX license).",
+		)
 	}
 }

@@ -1,9 +1,9 @@
-resource "privx_api_client" "foo" {
+resource "privx_api_client" "example" {
   name = "test-provider-terraform"
   roles = [
     {
       id   = "dc012ffa-540c-563a-5293-51a644ce273b"
-      name = "role_[Default]_[ADMIN]"
+      name = "test-role"
     }
   ]
 }

@@ -1,0 +1,69 @@
+# Demo Terraform Project
+
+This is a demo project showcasing the terraform-provider-privx with example configurations.
+
+## Files
+
+- `versions.tf` - Terraform provider requirements (for local development)
+- `provider.tf` - Provider configuration (generated from .env)
+- `resource-access-group.tf` - Example: Create a new access group (no dependencies)
+- `resource-whitelist.tf` - Example: Create a new whitelist (no dependencies)
+- `resource-extender.tf` - Example: Create a new extender (no dependencies)
+- `outputs.tf` - Example outputs
+
+## Source Files
+
+This demo project uses the following example files from `../examples/`:
+
+- `examples/resources/privx_access_group/resource.tf` → `resource-access-group.tf`
+- `examples/resources/privx_whitelist/resource.tf` → `resource-whitelist.tf`
+- `examples/resources/privx_extender/resource.tf` → `resource-extender.tf` (with enabled field added)
+- `examples/provider/provider.tf` → `provider.tf` (generated from .env)
+
+**Note:** These resources have no dependencies and can be created independently. To modify the demo, edit the source files in `../examples/` and regenerate this demo with `task build-demo`.
+
+## Setup
+
+1. **Make sure the provider is built**:
+   ```bash
+   cd ..
+   task build
+   ```
+
+2. **(Re)Create the demo files**:
+
+   ```bash
+   task build-demo
+   ```
+
+2. **Export GOPATH** (if not already set):
+   ```bash
+   export GOPATH=$(pwd)
+   ```
+   Note: This sets GOPATH to point to the repository root. Make sure this is exported in your shell session.
+
+3. **Configure Terraform to use the local provider** (if not already done):
+   Add to `~/.terraformrc`:
+   ```hcl
+   provider_installation {
+     dev_overrides {
+       "privx" = "$GOPATH/bin/"
+     }
+   }
+   ```
+
+4. **Update resource names** (optional):
+   - Edit the `.tf` files to customize resource names if desired
+
+5. **Skip terraform init** (not needed with dev_overrides - Terraform will use the local provider automatically)
+
+6. **Plan** (see what will happen):
+   ```bash
+   terraform plan
+   ```
+
+7. **Apply** (create/update resources):
+   ```bash
+   terraform apply
+   ```
+

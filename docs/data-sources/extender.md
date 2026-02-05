@@ -3,33 +3,18 @@
 page_title: "privx_extender Data Source - terraform-provider-privx"
 subcategory: ""
 description: |-
-  PrivX Extender data source
+  Extender data source
 ---
 
 # privx_extender (Data Source)
 
-PrivX Extender data source
+Extender data source
 
 ## Example Usage
 
 ```terraform
-# Get extender by name
-data "privx_extender" "example" {
+data "privx_extender" "my_extender" {
   name = "example-extender"
-}
-
-# Output the client information
-output "extender_info" {
-  value = {
-    id              = data.privx_extender.example.id
-    name            = data.privx_extender.example.name
-
-    access_group_id = data.privx_extender.example.access_group_id
-    enabled         = data.privx_extender.example.enabled
-    registered      = data.privx_extender.example.registered
-    permissions     = data.privx_extender.example.permissions
-    routing_prefix  = data.privx_extender.example.routing_prefix
-  }
 }
 ```
 
@@ -42,13 +27,12 @@ output "extender_info" {
 
 ### Read-Only
 
-- `id` (String) Extender UUID
 - `access_group_id` (String) Access Group ID
-- `enabled` (Boolean) Whether the extender is enabled
+- `enabled` (Boolean) Whether the Extender is enabled
 - `extender_address` (List of String) List of extender addresses
-- `permissions` (List of String) List of permissions for the extender
-- `registered` (Boolean) Whether the extender is registered
-- `routing_prefix` (String) Routing prefix for the extender
+- `id` (String) Extender UUID
+- `permissions` (List of String) List of permissions for the Extender
+- `registered` (Boolean) Whether the Extender is registered
+- `routing_prefix` (String) Routing prefix for the Extender
 - `secret` (String, Sensitive) Client Secret
-- `subnets` (List of String) List of subnets for the extender
-
+- `subnets` (List of String) List of subnets for the Extender

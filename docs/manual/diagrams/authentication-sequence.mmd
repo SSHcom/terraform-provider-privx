@@ -1,0 +1,30 @@
+sequenceDiagram
+  participant TF as Terraform CLI
+  participant PF as Plugin Framework
+  participant Prov as privxProvider
+  participant Client as internal/client
+  participant SDK as PrivX SDK (restapi/oauth)
+  participant PrivX as PrivX API
+
+  TF->>PF: Load provider binary
+  PF->>Prov: Configure with provider config and environment
+  Prov->>Prov: Read configuration and merge with environment variables
+  Prov->>Prov: Validate required fields
+
+  Prov->>Client: Create connector with authentication parameters
+  alt Bearer token provided
+    Client->>SDK: Configure bearer token authentication
+  else Client credentials
+    Client->>SDK: Initialize REST client with base URL
+    Client->>SDK: Configure OAuth client credentials flow
+  end
+
+  Client->>SDK: Request access token
+  SDK->>PrivX: Authenticate (bearer token or OAuth)
+  PrivX-->>SDK: Return access token
+
+  Client->>SDK: Create connector with authentication and base URL
+  SDK-->>Prov: Return configured connector
+
+  Prov->>PF: Store connector in provider data
+  PF-->>TF: Provider configured and ready

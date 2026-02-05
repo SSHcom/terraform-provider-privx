@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"terraform-provider-privx/internal/utils"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/rolestore"
 	"github.com/SSHcom/privx-sdk-go/v2/api/vault"
@@ -33,6 +34,7 @@ type SecretResource struct {
 
 // SecretResourceModel contains PrivX secret information.
 type SecretResourceModel struct {
+	ID         types.String `tfsdk:"id"`
 	Name       types.String `tfsdk:"name"`
 	ReadRoles  types.List   `tfsdk:"read_roles"`
 	WriteRoles types.List   `tfsdk:"write_roles"`
@@ -45,7 +47,7 @@ type SecretResourceModel struct {
 	Path       types.String `tfsdk:"path"`
 }
 
-// RoleHandleModel represents a role handle
+// RoleHandleModel represents a role handle.
 type RoleHandleModel struct {
 	ID   types.String `tfsdk:"id"`
 	Name types.String `tfsdk:"name"`
@@ -59,6 +61,10 @@ func (r *SecretResource) Schema(ctx context.Context, req resource.SchemaRequest,
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "PrivX Secret resource",
 		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				MarkdownDescription: "Secret ID (same as name)",
+				Computed:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Secret name (used as identifier)",
 				Required:            true,
@@ -236,9 +242,7 @@ func (r *SecretResource) Create(ctx context.Context, req resource.CreateRequest,
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read created secret, got error: %s", err))
 		return
 	}
-
-	r.populateSecretModel(ctx, data, secret)
-
+	r.populateSecretModel(data, secret)
 	tflog.Debug(ctx, "Storing secret into the state", map[string]interface{}{
 		"state": fmt.Sprintf("%+v", data),
 	})
@@ -256,30 +260,21 @@ func (r *SecretResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	secret, err := r.client.GetSecret(data.Name.ValueString())
 	if err != nil {
-		// Log the full error for debugging
-		errorStr := err.Error()
 		tflog.Debug(ctx, "Error reading secret", map[string]interface{}{
 			"name":  data.Name.ValueString(),
-			"error": errorStr,
+			"error": err.Error(),
 		})
 
-		// Check if the error indicates the resource no longer exists
-		if contains(errorStr, "NOT_FOUND") ||
-			contains(errorStr, "404") ||
-			contains(errorStr, "BAD_REQUEST") {
-			// Resource likely no longer exists, remove from state
-			tflog.Info(ctx, "Secret resource appears to be deleted, removing from state", map[string]interface{}{
-				"name":  data.Name.ValueString(),
-				"error": errorStr,
-			})
+		if utils.IsPrivxNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
+
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read secret, got error: %s", err))
 		return
 	}
 
-	r.populateSecretModel(ctx, data, secret)
+	r.populateSecretModel(data, secret)
 
 	tflog.Debug(ctx, "Storing secret into the state", map[string]interface{}{
 		"state": fmt.Sprintf("%+v", data),
@@ -371,7 +366,7 @@ func (r *SecretResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	r.populateSecretModel(ctx, data, secret)
+	r.populateSecretModel(data, secret)
 
 	tflog.Debug(ctx, "Storing updated secret into the state", map[string]interface{}{
 		"state": fmt.Sprintf("%+v", data),
@@ -394,6 +389,9 @@ func (r *SecretResource) Delete(ctx context.Context, req resource.DeleteRequest,
 
 	err := r.client.DeleteSecret(data.Name.ValueString())
 	if err != nil {
+		if utils.IsPrivxNotFound(err) {
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete secret, got error: %s", err))
 		return
 	}
@@ -404,11 +402,17 @@ func (r *SecretResource) Delete(ctx context.Context, req resource.DeleteRequest,
 }
 
 func (r *SecretResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, resp)
+	resp.Diagnostics.Append(
+		resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...,
+	)
+	resp.Diagnostics.Append(
+		resp.State.SetAttribute(ctx, path.Root("name"), req.ID)...,
+	)
 }
 
-// populateSecretModel populates the Terraform model from the API response
-func (r *SecretResource) populateSecretModel(ctx context.Context, data *SecretResourceModel, secret *vault.Secret) {
+// populateSecretModel populates the Terraform model from the API response.
+func (r *SecretResource) populateSecretModel(data *SecretResourceModel, secret *vault.Secret) {
+	data.ID = types.StringValue(secret.Name)
 	data.Name = types.StringValue(secret.Name)
 	data.OwnerID = types.StringValue(secret.OwnerID)
 	data.Created = types.StringValue(secret.Created.Format("2006-01-02T15:04:05Z"))
@@ -473,7 +477,7 @@ func (r *SecretResource) populateSecretModel(ctx context.Context, data *SecretRe
 }
 
 // Helper function to check if a string contains a substring (case-insensitive)
-func contains(s, substr string) bool {
+/*func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
 			func() bool {
@@ -484,4 +488,4 @@ func contains(s, substr string) bool {
 				}
 				return false
 			}())))
-}
+}*/

@@ -3,15 +3,19 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+	"terraform-provider-privx/internal/utils"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/hoststore"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
@@ -68,10 +72,13 @@ func (r *WhitelistResource) Schema(ctx context.Context, req resource.SchemaReque
 				Default:             stringdefault.StaticString(""),
 			},
 			"type": schema.StringAttribute{
-				MarkdownDescription: "Whitelist type",
+				MarkdownDescription: "Whitelist type (`glob` or `regex`)",
 				Optional:            true,
 				Computed:            true,
-				Default:             stringdefault.StaticString(""),
+				Default:             stringdefault.StaticString("glob"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("glob", "regex"),
+				},
 			},
 			"whitelist_patterns": schema.SetAttribute{
 				ElementType:         types.StringType,
@@ -187,6 +194,10 @@ func (r *WhitelistResource) Read(ctx context.Context, req resource.ReadRequest, 
 	// Get whitelist from API
 	whitelist, err := r.client.GetWhitelist(data.ID.ValueString())
 	if err != nil {
+		if isNotFoundError(err) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read whitelist, got error: %s", err))
 		return
 	}
@@ -196,15 +207,12 @@ func (r *WhitelistResource) Read(ctx context.Context, req resource.ReadRequest, 
 	data.Comment = types.StringValue(whitelist.Comment)
 	data.Type = types.StringValue(whitelist.Type)
 
-	// Convert patterns to types.Set
-	if len(whitelist.WhiteListPatterns) > 0 {
-		patternsSet, diags := types.SetValueFrom(ctx, types.StringType, whitelist.WhiteListPatterns)
-		resp.Diagnostics.Append(diags...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		data.WhitelistPatterns = patternsSet
+	patternsSet, diags := types.SetValueFrom(ctx, types.StringType, whitelist.WhiteListPatterns)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
+	data.WhitelistPatterns = patternsSet
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -281,11 +289,11 @@ func (r *WhitelistResource) Delete(ctx context.Context, req resource.DeleteReque
 		return
 	}
 
-	// Delete whitelist using hoststore API
-	err := r.client.DeleteWhitelist(data.ID.ValueString())
-	if err != nil {
+	if err := r.client.DeleteWhitelist(data.ID.ValueString()); err != nil {
+		if utils.IsPrivxNotFound(err) {
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete whitelist, got error: %s", err))
-		return
 	}
 
 	tflog.Debug(ctx, "Deleted whitelist", map[string]interface{}{
@@ -295,4 +303,13 @@ func (r *WhitelistResource) Delete(ctx context.Context, req resource.DeleteReque
 
 func (r *WhitelistResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "404") ||
+		strings.Contains(msg, "not found")
 }

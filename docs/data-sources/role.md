@@ -13,11 +13,9 @@ Role data source
 ## Example Usage
 
 ```terraform
-provider "privx" {
-}
-
-data "privx_role" "foo" {
-  name = "my_role_name_here"
+output "privx_admin_role_name" {
+  description = "Name of the PrivX admin role"
+  value       = data.privx_role.privx-admin.name
 }
 ```
 
