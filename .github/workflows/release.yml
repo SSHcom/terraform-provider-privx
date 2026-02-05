@@ -38,8 +38,23 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
-          args: release --clean
+          version: ~v2
+          args: release --clean --skip-validate
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
+
+      # Generate Software Bill of Materials for security and compliance
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+
+      # Upload SBOM to the release
+      - name: Upload SBOM to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: sbom.cdx.json
+          token: ${{ secrets.RELEASE_TOKEN }}

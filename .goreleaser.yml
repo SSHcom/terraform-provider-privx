@@ -26,7 +26,9 @@ builds:
     - arm64
   binary: '{{ .ProjectName }}_v{{ .Version }}'
 archives:
-- format: zip
+- format_overrides:
+    - goos: windows
+      format: zip
   name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 checksum:
   extra_files:
