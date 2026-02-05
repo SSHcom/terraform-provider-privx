@@ -28,7 +28,7 @@ builds:
 archives:
 - format_overrides:
     - goos: windows
-      format: zip
+      format: [ 'zip' ]
   name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 checksum:
   extra_files:
@@ -52,8 +52,6 @@ release:
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
-    - glob: 'sbom.cdx.json'
-      name_template: '{{ .ProjectName }}_{{ .Version }}_sbom.cdx.json'
   # If you want to manually examine the release before its live, uncomment this line:
   # draft: true
 changelog:
