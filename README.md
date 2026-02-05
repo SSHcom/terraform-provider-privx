@@ -1,5 +1,10 @@
 # Terraform Provider for PrivX
 
+[![License](https://img.shields.io/github/license/SSHcom/terraform-provider-privx)](https://github.com/SSHcom/terraform-provider-privx/blob/main/LICENSE)
+[![Test](https://github.com/SSHcom/terraform-provider-privx/actions/workflows/test.yml/badge.svg)](https://github.com/SSHcom/terraform-provider-privx/actions/workflows/test.yml)
+[![Release](https://github.com/SSHcom/terraform-provider-privx/actions/workflows/release.yml/badge.svg)](https://github.com/SSHcom/terraform-provider-privx/actions/workflows/release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/SSHcom/terraform-provider-privx)](https://goreportcard.com/report/github.com/SSHcom/terraform-provider-privx)
+
 This repository is the official Terraform provider for PrivX, enabling Infrastructure as Code management of PrivX resources through declarative Terraform configurations.
 
 ## Overview
