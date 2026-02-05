@@ -1,4 +1,4 @@
-## 1.42.0 (Unreleased)
+## 1.42.0 (Released)
 
 ### Features
 - Added new data sources: `privx_api_proxy_config`, `privx_api_target`, `privx_password_policy`, `privx_script_template`
