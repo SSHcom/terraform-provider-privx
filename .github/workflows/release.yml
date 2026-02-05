@@ -1,41 +1,53 @@
-name: Release
+# Release workflow - Creates and publishes GitHub releases with signed artifacts
+# Triggered automatically when version tags are pushed to the repository
+name: release
 
 on:
+  # Trigger on version tags (e.g., v1.0.0, v1.42.0)
   push:
-    paths-ignore:
-    - 'README.md'
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
+  # Allow workflow to create releases and upload artifacts
   contents: write
 
 jobs:
-  goreleaser:
+  # Main release job - builds, signs, and publishes release artifacts
+  release:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version-file: 'go.mod'
+      # Checkout repository with full history for changelog generation
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Import GPG key
-      uses: crazy-max/ghaction-import-gpg@v6
-      with:
-        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-        passphrase: ${{ secrets.GPG_PASSPHRASE }}
-    
-    - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v5
-      with:
-        distribution: goreleaser
-        version: v2.12.0
-        args: release --clean
-      env:
-        GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
+      # Set up Go environment using version from go.mod
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Generate Software Bill of Materials for security and compliance
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+
+      # Import GPG key for signing release artifacts
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      # Build, sign, and publish release using GoReleaser
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
