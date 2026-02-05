@@ -1,0 +1,54 @@
+version: "3"
+
+vars:
+  REPO_ROOT: "{{.ROOT_DIR}}"
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  lint:
+    desc: Run golangci-lint on project sources
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - gofmt -w ./internal ./scripts ./tools ./main.go
+
+  test:
+    desc: Run acceptance tests
+    cmds:
+      - ./scripts/run-acceptance-tests.sh
+
+  doc:
+    desc: Generate documentation
+    cmds:
+      - tfplugindocs generate -provider-name terraform-provider-privx  rendered-website-dir docs
+      - ./scripts/convert-diagrams.sh docs/manual/diagrams/*.mmd
+
+  dep:
+    desc: Fetch dependencies, tidy and vendor
+    cmds:
+      - go get ./... {{.CLI_ARGS}}
+      - go mod tidy
+      - go mod vendor
+
+  build:
+    desc: Build the provider
+    cmds:
+      - mkdir -p bin
+      - GOBIN={{.ROOT_DIR}}/bin go install -v .
+
+  build-demo:
+    desc: Create demo Terraform project in /demo/ with examples
+    cmds:
+      - ./scripts/godotenv.sh -f .env -- ./scripts/build-demo-project.sh
+
+  release:snapshot:
+    desc: Build release artifacts locally (snapshot, no publish, no signing)
+    cmds:
+      - goreleaser release --snapshot --clean --skip=sign --skip=sign

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
+	"terraform-provider-privx/internal/utils"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/hoststore"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
@@ -69,9 +70,24 @@ type HostResourceModel struct {
 	Created                 types.String     `tfsdk:"created"`
 	Updated                 types.String     `tfsdk:"updated"`
 	UpdatedBy               types.String     `tfsdk:"updated_by"`
+	PasswordRotation        types.Object     `tfsdk:"password_rotation"`
+	StandAloneHost          types.Bool       `tfsdk:"stand_alone_host"`
 }
 
-// ServiceModel represents a host service
+type PasswordRotationModel struct {
+	AccessGroupID                    types.String `tfsdk:"access_group_id"`
+	UseMainAccount                   types.Bool   `tfsdk:"use_main_account"`
+	OperatingSystem                  types.String `tfsdk:"operating_system"`
+	Protocol                         types.String `tfsdk:"protocol"`
+	PasswordPolicyID                 types.String `tfsdk:"password_policy_id"`
+	ScriptTemplateID                 types.String `tfsdk:"script_template_id"`
+	CertificateValidationOptions     types.String `tfsdk:"certificate_validation_options"`
+	WinrmHostCertificateTrustAnchors types.String `tfsdk:"winrm_host_certificate_trust_anchors"`
+	WinrmAddress                     types.String `tfsdk:"winrm_address"`
+	WinrmPort                        types.Int64  `tfsdk:"winrm_port"`
+}
+
+// ServiceModel represents a host service.
 type ServiceModel struct {
 	Service                types.String `tfsdk:"service"`
 	Address                types.String `tfsdk:"address"`
@@ -82,7 +98,7 @@ type ServiceModel struct {
 	Source                 types.String `tfsdk:"source"`
 }
 
-// PrincipalModel represents a host principal
+// PrincipalModel represents a host principal.
 type PrincipalModel struct {
 	Principal              types.String `tfsdk:"principal"`
 	Passphrase             types.String `tfsdk:"passphrase"`
@@ -97,19 +113,19 @@ type PrincipalModel struct {
 	CommandRestrictions    types.Object `tfsdk:"command_restrictions"`
 }
 
-// RoleModel represents a role reference
+// RoleModel represents a role reference.
 type RoleModel struct {
 	ID   types.String `tfsdk:"id"`
 	Name types.String `tfsdk:"name"`
 }
 
-// SSHHostPublicKeyModel represents an SSH host public key
+// SSHHostPublicKeyModel represents an SSH host public key.
 type SSHHostPublicKeyModel struct {
 	Key         types.String `tfsdk:"key"`
 	Fingerprint types.String `tfsdk:"fingerprint"`
 }
 
-// ServiceOptionsModel represents service options for a principal
+// ServiceOptionsModel represents service options for a principal.
 type ServiceOptionsModel struct {
 	SSH types.Object `tfsdk:"ssh"`
 	RDP types.Object `tfsdk:"rdp"`
@@ -118,7 +134,7 @@ type ServiceOptionsModel struct {
 	DB  types.Object `tfsdk:"db"`
 }
 
-// SSHOptionsModel represents SSH service options
+// SSHOptionsModel represents SSH service options.
 type SSHOptionsModel struct {
 	Shell        types.Bool `tfsdk:"shell"`
 	FileTransfer types.Bool `tfsdk:"file_transfer"`
@@ -128,33 +144,33 @@ type SSHOptionsModel struct {
 	Other        types.Bool `tfsdk:"other"`
 }
 
-// RDPOptionsModel represents RDP service options
+// RDPOptionsModel represents RDP service options.
 type RDPOptionsModel struct {
 	FileTransfer types.Bool `tfsdk:"file_transfer"`
 	Audio        types.Bool `tfsdk:"audio"`
 	Clipboard    types.Bool `tfsdk:"clipboard"`
 }
 
-// WebOptionsModel represents Web service options
+// WebOptionsModel represents Web service options.
 type WebOptionsModel struct {
 	FileTransfer types.Bool `tfsdk:"file_transfer"`
 	Audio        types.Bool `tfsdk:"audio"`
 	Clipboard    types.Bool `tfsdk:"clipboard"`
 }
 
-// VNCOptionsModel represents VNC service options
+// VNCOptionsModel represents VNC service options.
 type VNCOptionsModel struct {
 	FileTransfer types.Bool `tfsdk:"file_transfer"`
 	Clipboard    types.Bool `tfsdk:"clipboard"`
 }
 
-// DBOptionsModel represents DB service options
+// DBOptionsModel represents DB service options.
 type DBOptionsModel struct {
 	MaxBytesUpload   types.Int64 `tfsdk:"max_bytes_upload"`
 	MaxBytesDownload types.Int64 `tfsdk:"max_bytes_download"`
 }
 
-// CommandRestrictionsModel represents command restrictions
+// CommandRestrictionsModel represents command restrictions.
 type CommandRestrictionsModel struct {
 	Enabled          types.Bool   `tfsdk:"enabled"`
 	RShellVariant    types.String `tfsdk:"rshell_variant"`
@@ -166,19 +182,19 @@ type CommandRestrictionsModel struct {
 	Banner           types.String `tfsdk:"banner"`
 }
 
-// WhitelistGrantModel represents a whitelist grant
+// WhitelistGrantModel represents a whitelist grant.
 type WhitelistGrantModel struct {
 	Whitelist types.Object `tfsdk:"whitelist"`
 	Roles     types.List   `tfsdk:"roles"`
 }
 
-// WhitelistHandleModel represents a whitelist handle
+// WhitelistHandleModel represents a whitelist handle.
 type WhitelistHandleModel struct {
 	ID   types.String `tfsdk:"id"`
 	Name types.String `tfsdk:"name"`
 }
 
-// SessionRecordingOptionsModel represents session recording options
+// SessionRecordingOptionsModel represents session recording options.
 type SessionRecordingOptionsModel struct {
 	DisableClipboardRecording    types.Bool `tfsdk:"disable_clipboard_recording"`
 	DisableFileTransferRecording types.Bool `tfsdk:"disable_file_transfer_recording"`
@@ -212,18 +228,27 @@ func (r *HostResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				MarkdownDescription: "External ID for the host",
 				Optional:            true,
 				Computed:            true,
-				Default:             stringdefault.StaticString(""),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"instance_id": schema.StringAttribute{
 				MarkdownDescription: "Instance ID for the host",
 				Optional:            true,
 				Computed:            true,
-				Default:             stringdefault.StaticString(""),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"source_id": schema.StringAttribute{
 				MarkdownDescription: "Source ID for the host",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
+
 			"access_group_id": schema.StringAttribute{
 				MarkdownDescription: "Access Group ID for the host",
 				Required:            true,
@@ -292,7 +317,6 @@ func (r *HostResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				MarkdownDescription: "Whether the host is disabled",
 				Optional:            true,
 				Computed:            true,
-				Default:             stringdefault.StaticString("FALSE"),
 			},
 			"deployable": schema.BoolAttribute{
 				MarkdownDescription: "Whether the host is deployable",
@@ -319,16 +343,103 @@ func (r *HostResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				Default:             booldefault.StaticBool(false),
 			},
 			"password_rotation_enabled": schema.BoolAttribute{
-				MarkdownDescription: "Whether password rotation is enabled",
-				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(false),
+				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
+
+			"password_rotation": schema.SingleNestedAttribute{
+				MarkdownDescription: "Password rotation configuration",
+				Optional:            true,
+				Computed:            true, // important so state can exist even if API doesn't return it
+				Attributes: map[string]schema.Attribute{
+					"access_group_id": schema.StringAttribute{
+						Optional: true,
+						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"use_main_account": schema.BoolAttribute{
+						Optional: true,
+						Computed: true,
+						PlanModifiers: []planmodifier.Bool{
+							// add boolplanmodifier import
+							boolplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"operating_system": schema.StringAttribute{
+						Optional: true,
+						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"protocol": schema.StringAttribute{
+						Optional: true,
+						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"password_policy_id": schema.StringAttribute{
+						Optional: true,
+						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"script_template_id": schema.StringAttribute{
+						Optional: true,
+						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+
+					// keep these if you want them in config
+					"certificate_validation_options": schema.StringAttribute{
+						Optional: true,
+						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"winrm_host_certificate_trust_anchors": schema.StringAttribute{
+						Optional: true,
+						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"winrm_address": schema.StringAttribute{
+						Optional: true,
+						Computed: true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
+					},
+					"winrm_port": schema.Int64Attribute{
+						Optional: true,
+						Computed: true,
+						Default:  int64default.StaticInt64(0),
+					},
+				},
+			},
+
 			"contact_address": schema.StringAttribute{
 				MarkdownDescription: "Contact address for the host",
 				Optional:            true,
 				Computed:            true,
-				Default:             stringdefault.StaticString(""),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"stand_alone_host": schema.BoolAttribute{
+				MarkdownDescription: "Whether this is a standalone host (not managed by a discovery source).",
+				Computed:            true,
 			},
 			"tags": schema.ListAttribute{
 				MarkdownDescription: "List of tags for the host (order may change due to API sorting)",
@@ -397,8 +508,9 @@ func (r *HostResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 						"passphrase": schema.StringAttribute{
 							MarkdownDescription: "Principal passphrase (write-only, API returns masked value)",
 							Optional:            true,
-							Computed:            true,
-							Default:             stringdefault.StaticString(""),
+							Sensitive:           true,
+							// no Default
+							// no Computed (unless you really want to store something when omitted)
 						},
 						"rotate": schema.BoolAttribute{
 							MarkdownDescription: "Whether to rotate the principal",
@@ -784,9 +896,18 @@ func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	tflog.Debug(ctx, "Loaded host data", map[string]interface{}{
+	/*tflog.Debug(ctx, "Loaded host data", map[string]interface{}{
 		"data": fmt.Sprintf("%+v", data),
-	})
+	})*/
+
+	var pr PasswordRotationModel
+	if !data.PasswordRotation.IsNull() && !data.PasswordRotation.IsUnknown() {
+		diags := data.PasswordRotation.As(ctx, &pr, basetypes.ObjectAsOptions{})
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
 
 	// Convert addresses list to string slice
 	var addresses []string
@@ -821,12 +942,15 @@ func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, r
 	for _, pm := range data.Principals {
 		principal := hoststore.HostPrincipals{
 			Principal:              pm.Principal.ValueString(),
-			Passphrase:             pm.Passphrase.ValueString(),
 			Rotate:                 pm.Rotate.ValueBool(),
 			UseForPasswordRotation: pm.UseForPasswordRotation.ValueBool(),
 			UsernameAttribute:      pm.UsernameAttribute.ValueString(),
 			UseUserAccount:         pm.UseUserAccount.ValueBool(),
 			Source:                 pm.Source.ValueString(),
+		}
+
+		if !isUnsetString(pm.Passphrase) {
+			principal.Passphrase = pm.Passphrase.ValueString()
 		}
 
 		// Convert roles
@@ -1022,30 +1146,26 @@ func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, r
 	toch := data.Toch.ValueBool()
 	auditEnabled := data.AuditEnabled.ValueBool()
 
+	contactAddress := ""
+	if !data.ContactAddress.IsNull() && !data.ContactAddress.IsUnknown() {
+		contactAddress = data.ContactAddress.ValueString()
+	}
+	if contactAddress == "" && len(addresses) > 0 {
+		contactAddress = addresses[0]
+	}
+
 	host := hoststore.Host{
-		CommonName:              data.CommonName.ValueString(),
-		Addresses:               addresses,
-		ExternalID:              data.ExternalID.ValueString(),
-		InstanceID:              data.InstanceID.ValueString(),
-		SourceID:                data.SourceID.ValueString(),
-		AccessGroupID:           data.AccessGroupID.ValueString(),
-		CloudProvider:           data.CloudProvider.ValueString(),
-		CloudProviderRegion:     data.CloudProviderRegion.ValueString(),
-		DistinguishedName:       data.DistinguishedName.ValueString(),
-		Organization:            data.Organization.ValueString(),
-		OrganizationalUnit:      data.OrganizationalUnit.ValueString(),
-		Zone:                    data.Zone.ValueString(),
-		HostType:                data.HostType.ValueString(),
-		HostClassification:      data.HostClassification.ValueString(),
-		Comment:                 data.Comment.ValueString(),
-		UserMessage:             data.UserMessage.ValueString(),
-		Disabled:                data.Disabled.ValueString(),
+		CommonName:    data.CommonName.ValueString(),
+		Addresses:     addresses,
+		AccessGroupID: data.AccessGroupID.ValueString(),
+
+		// leave optional strings out here; set them conditionally below
+
 		Deployable:              &deployable,
 		Tofu:                    &tofu,
 		Toch:                    &toch,
 		AuditEnabled:            &auditEnabled,
-		PasswordRotationEnabled: data.PasswordRotationEnabled.ValueBool(),
-		ContactAddress:          data.ContactAddress.ValueString(),
+		ContactAddress:          contactAddress,
 		Tags:                    tags,
 		Services:                services,
 		Principals:              principals,
@@ -1053,14 +1173,92 @@ func (r *HostResource) Create(ctx context.Context, req resource.CreateRequest, r
 		SessionRecordingOptions: sessionRecordingOptions,
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("hoststore.Host model used: %+v", host))
+	enabled := boolOrFalse(data.PasswordRotationEnabled)
+	host.PasswordRotationEnabled = enabled
 
+	if enabled {
+		rm := expandPasswordRotation(pr)
+		if rm == nil {
+			resp.Diagnostics.AddError(
+				"Invalid password rotation configuration",
+				"password_rotation_enabled=true requires password_rotation block with required fields (use_main_account, operating_system, protocol, password_policy_id, script_template_id).",
+			)
+			return
+		}
+		host.PasswordRotation = rm
+	} else {
+		host.PasswordRotation = nil
+	}
+
+	// only set if user provided
+	if !isUnsetString(data.SourceID) {
+		host.SourceID = data.SourceID.ValueString()
+	}
+	if !isUnsetString(data.ExternalID) {
+		host.ExternalID = data.ExternalID.ValueString()
+	}
+	if !isUnsetString(data.InstanceID) {
+		host.InstanceID = data.InstanceID.ValueString()
+	}
+	if !isUnsetString(data.CloudProvider) {
+		host.CloudProvider = data.CloudProvider.ValueString()
+	}
+	if !isUnsetString(data.CloudProviderRegion) {
+		host.CloudProviderRegion = data.CloudProviderRegion.ValueString()
+	}
+	if !isUnsetString(data.DistinguishedName) {
+		host.DistinguishedName = data.DistinguishedName.ValueString()
+	}
+	if !isUnsetString(data.Organization) {
+		host.Organization = data.Organization.ValueString()
+	}
+	if !isUnsetString(data.OrganizationalUnit) {
+		host.OrganizationalUnit = data.OrganizationalUnit.ValueString()
+	}
+	if !isUnsetString(data.Zone) {
+		host.Zone = data.Zone.ValueString()
+	}
+	if !isUnsetString(data.HostType) {
+		host.HostType = data.HostType.ValueString()
+	}
+	if !isUnsetString(data.HostClassification) {
+		host.HostClassification = data.HostClassification.ValueString()
+	}
+	if !isUnsetString(data.Comment) {
+		host.Comment = data.Comment.ValueString()
+	}
+	if !isUnsetString(data.UserMessage) {
+		host.UserMessage = data.UserMessage.ValueString()
+	}
+	if !isUnsetString(data.Disabled) {
+		host.Disabled = data.Disabled.ValueString()
+	}
+
+	if data.PasswordRotationEnabled.ValueBool() && host.PasswordRotation == nil {
+		resp.Diagnostics.AddError(
+			"Invalid password rotation configuration",
+			"password_rotation_enabled=true requires password_rotation block with required fields (use_main_account, operating_system, protocol, password_policy_id, script_template_id).",
+		)
+		return
+	}
+
+	tflog.Debug(ctx, fmt.Sprintf("hoststore.Host model used: %+v", host))
 	createdHost, err := r.client.CreateHost(&host)
 	if err != nil {
+		tflog.Error(ctx, "CreateHost failed", map[string]any{
+			"err_type": fmt.Sprintf("%T", err),
+			"err":      fmt.Sprintf("%+v", err),
+			"err_str":  err.Error(),
+			// also dump key fields
+			"source_id":       host.SourceID,
+			"access_group_id": host.AccessGroupID,
+			"services_len":    len(host.Services),
+			"principals_len":  len(host.Principals),
+		})
+
 		resp.Diagnostics.AddError(
 			"Unable to Create Host",
-			"An unexpected error occurred while attempting to create the host.\n"+
-				err.Error(),
+			fmt.Sprintf("CreateHost failed: %T: %+v", err, err),
 		)
 		return
 	}
@@ -1091,25 +1289,19 @@ func (r *HostResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 
 	host, err := r.client.GetHost(data.ID.ValueString())
 	if err != nil {
-		// Log the full error for debugging
-		errorStr := err.Error()
 		tflog.Debug(ctx, "Error reading host", map[string]interface{}{
 			"id":    data.ID.ValueString(),
-			"error": errorStr,
+			"error": err.Error(),
 		})
 
-		// Check if the error indicates the resource no longer exists
-		if strings.Contains(errorStr, "NOT_FOUND") ||
-			strings.Contains(errorStr, "404") ||
-			strings.Contains(errorStr, "BAD_REQUEST") {
-			// Resource likely no longer exists, remove from state
+		if utils.IsPrivxNotFound(err) {
 			tflog.Info(ctx, "Host resource appears to be deleted, removing from state", map[string]interface{}{
-				"id":    data.ID.ValueString(),
-				"error": errorStr,
+				"id": data.ID.ValueString(),
 			})
 			resp.State.RemoveResource(ctx)
 			return
 		}
+
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read host, got error: %s", err))
 		return
 	}
@@ -1131,6 +1323,15 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
+	var pr PasswordRotationModel
+	if !data.PasswordRotation.IsNull() && !data.PasswordRotation.IsUnknown() {
+		diags := data.PasswordRotation.As(ctx, &pr, basetypes.ObjectAsOptions{})
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
 	currentHost, err := r.client.GetHost(data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read current host, got error: %s", err))
@@ -1139,9 +1340,16 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	// Update the host with new values
 	currentHost.CommonName = data.CommonName.ValueString()
-	currentHost.ExternalID = data.ExternalID.ValueString()
-	currentHost.InstanceID = data.InstanceID.ValueString()
-	currentHost.SourceID = data.SourceID.ValueString()
+	currentHost.CommonName = data.CommonName.ValueString()
+
+	// Only overwrite if user explicitly set it in config/plan
+	if !isUnsetString(data.ExternalID) {
+		currentHost.ExternalID = data.ExternalID.ValueString()
+	}
+	if !isUnsetString(data.InstanceID) {
+		currentHost.InstanceID = data.InstanceID.ValueString()
+	}
+
 	currentHost.AccessGroupID = data.AccessGroupID.ValueString()
 	currentHost.CloudProvider = data.CloudProvider.ValueString()
 	currentHost.CloudProviderRegion = data.CloudProviderRegion.ValueString()
@@ -1151,7 +1359,9 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	currentHost.Zone = data.Zone.ValueString()
 	currentHost.HostType = data.HostType.ValueString()
 	currentHost.HostClassification = data.HostClassification.ValueString()
-	currentHost.Comment = data.Comment.ValueString()
+	if !isUnsetString(data.Comment) {
+		currentHost.Comment = data.Comment.ValueString()
+	}
 	currentHost.UserMessage = data.UserMessage.ValueString()
 	currentHost.Disabled = data.Disabled.ValueString()
 	deployable := data.Deployable.ValueBool()
@@ -1162,7 +1372,34 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	currentHost.Tofu = &tofu
 	currentHost.Toch = &toch
 	currentHost.AuditEnabled = &auditEnabled
-	currentHost.PasswordRotationEnabled = data.PasswordRotationEnabled.ValueBool()
+	// --- Password rotation handling ---
+	// Only change enabled flag if it was explicitly set in config/plan.
+	if boolIsKnown(data.PasswordRotationEnabled) {
+		enabled := data.PasswordRotationEnabled.ValueBool()
+		currentHost.PasswordRotationEnabled = enabled
+
+		if enabled {
+			rm := expandPasswordRotation(pr)
+			if rm == nil {
+				resp.Diagnostics.AddError(
+					"Invalid password rotation configuration",
+					"password_rotation_enabled=true requires password_rotation block with required fields (use_main_account, operating_system, protocol, password_policy_id, script_template_id).",
+				)
+				return
+			}
+			currentHost.PasswordRotation = rm
+		} else {
+			// Disable rotation -> clear metadata to avoid server-side validation / stale config
+			currentHost.PasswordRotation = nil
+		}
+	}
+
+	// else keep currentHost.PasswordRotation as-is.
+
+	if !isUnsetString(data.SourceID) {
+		currentHost.SourceID = data.SourceID.ValueString()
+	}
+
 	currentHost.ContactAddress = data.ContactAddress.ValueString()
 
 	// Convert addresses list to string slice
@@ -1170,7 +1407,14 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	if !data.Addresses.IsNull() && !data.Addresses.IsUnknown() {
 		data.Addresses.ElementsAs(ctx, &addresses, false)
 	}
-	currentHost.Addresses = addresses
+	contactAddress := ""
+	if !data.ContactAddress.IsNull() && !data.ContactAddress.IsUnknown() {
+		contactAddress = data.ContactAddress.ValueString()
+	}
+	if contactAddress == "" && len(addresses) > 0 {
+		contactAddress = addresses[0]
+	}
+	currentHost.ContactAddress = contactAddress
 
 	// Convert tags list to string slice and sort for consistency
 	var tags []string
@@ -1201,12 +1445,15 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	for _, pm := range data.Principals {
 		principal := hoststore.HostPrincipals{
 			Principal:              pm.Principal.ValueString(),
-			Passphrase:             pm.Passphrase.ValueString(),
 			Rotate:                 pm.Rotate.ValueBool(),
 			UseForPasswordRotation: pm.UseForPasswordRotation.ValueBool(),
 			UsernameAttribute:      pm.UsernameAttribute.ValueString(),
 			UseUserAccount:         pm.UseUserAccount.ValueBool(),
 			Source:                 pm.Source.ValueString(),
+		}
+
+		if !isUnsetString(pm.Passphrase) {
+			principal.Passphrase = pm.Passphrase.ValueString()
 		}
 
 		// Convert roles
@@ -1400,9 +1647,29 @@ func (r *HostResource) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	tflog.Debug(ctx, fmt.Sprintf("hoststore.Host model used for update: %+v", currentHost))
 
+	tflog.Debug(ctx, "UpdateHost payload", map[string]any{
+		"id":                        data.ID.ValueString(),
+		"password_rotation_enabled": currentHost.PasswordRotationEnabled,
+		"password_rotation_is_nil":  currentHost.PasswordRotation == nil,
+		"password_rotation":         fmt.Sprintf("%+v", currentHost.PasswordRotation),
+		"source_id":                 currentHost.SourceID,
+		"access_group_id":           currentHost.AccessGroupID,
+		"services_len":              len(currentHost.Services),
+		"principals_len":            len(currentHost.Principals),
+	})
+
 	err = r.client.UpdateHost(data.ID.ValueString(), currentHost)
+
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update host, got error: %s", err))
+		tflog.Error(ctx, "UpdateHost failed", map[string]any{
+			"err_type": fmt.Sprintf("%T", err),
+			"err":      fmt.Sprintf("%+v", err),
+			"err_str":  err.Error(),
+		})
+
+		resp.Diagnostics.AddError("Client Error",
+			fmt.Sprintf("Unable to update host, got error: %T: %+v", err, err),
+		)
 		return
 	}
 
@@ -1428,17 +1695,25 @@ func (r *HostResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 
 	err := r.client.DeleteHost(data.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete host, got error: %s", err))
+		if utils.IsPrivxNotFound(err) {
+			return
+		}
+		resp.Diagnostics.AddError(
+			"Client Error",
+			fmt.Sprintf("Unable to delete host, got error: %s", err),
+		)
 		return
 	}
+
 }
 
 func (r *HostResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-// populateHostModel populates the Terraform model from the API response
+// populateHostModel populates the Terraform model from the API response.
 func (r *HostResource) populateHostModel(ctx context.Context, data *HostResourceModel, host *hoststore.Host) {
+
 	data.CommonName = types.StringValue(host.CommonName)
 	data.ExternalID = types.StringValue(host.ExternalID)
 	data.InstanceID = types.StringValue(host.InstanceID)
@@ -1476,6 +1751,41 @@ func (r *HostResource) populateHostModel(ctx context.Context, data *HostResource
 		data.AuditEnabled = types.BoolValue(false)
 	}
 	data.PasswordRotationEnabled = types.BoolValue(host.PasswordRotationEnabled)
+	prTypes := map[string]attr.Type{
+		"access_group_id":                      types.StringType,
+		"use_main_account":                     types.BoolType,
+		"operating_system":                     types.StringType,
+		"protocol":                             types.StringType,
+		"password_policy_id":                   types.StringType,
+		"script_template_id":                   types.StringType,
+		"certificate_validation_options":       types.StringType,
+		"winrm_host_certificate_trust_anchors": types.StringType,
+		"winrm_address":                        types.StringType,
+		"winrm_port":                           types.Int64Type,
+	}
+
+	if host.PasswordRotation == nil {
+		data.PasswordRotation = types.ObjectNull(prTypes)
+	} else {
+		prVals := map[string]attr.Value{
+			"access_group_id":                      stringOrNull(host.PasswordRotation.AccessGroupID),
+			"use_main_account":                     types.BoolValue(host.PasswordRotation.UseMainAccount),
+			"operating_system":                     types.StringValue(host.PasswordRotation.OperatingSystem),
+			"protocol":                             types.StringValue(host.PasswordRotation.Protocol),
+			"password_policy_id":                   stringOrNull(host.PasswordRotation.PasswordPolicyId),
+			"script_template_id":                   stringOrNull(host.PasswordRotation.ScriptTemplateId),
+			"certificate_validation_options":       certValidationOrDefault(host.PasswordRotation.CertificateValidationOptions),
+			"winrm_host_certificate_trust_anchors": stringOrNull(host.PasswordRotation.WinRMHostCertificateTrustAnchors),
+			"winrm_address":                        stringOrNull(host.PasswordRotation.WinrmAddress),
+			"winrm_port":                           types.Int64Value(int64(host.PasswordRotation.WinrmPort)),
+		}
+
+		data.PasswordRotation = types.ObjectValueMust(prTypes, prVals)
+	}
+
+	data.StandAloneHost = types.BoolValue(host.StandAloneHost)
+	data.ContactAddress = types.StringValue(host.ContactAddress)
+
 	data.ContactAddress = types.StringValue(host.ContactAddress)
 	data.Created = types.StringValue(host.Created)
 	data.Updated = types.StringValue(host.Updated)
@@ -1940,7 +2250,7 @@ func (r *HostResource) populateHostModel(ctx context.Context, data *HostResource
 	}, sroAttrs)
 }
 
-// tagsContainSameElements checks if two tag slices contain the same elements (ignoring order)
+// tagsContainSameElements checks if two tag slices contain the same elements (ignoring order).
 func tagsContainSameElements(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -1966,4 +2276,85 @@ func tagsContainSameElements(a, b []string) bool {
 	}
 
 	return true
+}
+
+func stringOrNull(s string) attr.Value {
+	if s == "" {
+		return types.StringNull()
+	}
+	return types.StringValue(s)
+}
+
+func isUnsetString(v types.String) bool {
+	return v.IsNull() || v.IsUnknown() || v.ValueString() == ""
+}
+func isUnsetBool(v types.Bool) bool {
+	return v.IsNull() || v.IsUnknown()
+}
+
+func expandPasswordRotation(m PasswordRotationModel) *hoststore.RotationMetadata {
+	// If object truly absent -> nil
+	if m.AccessGroupID.IsNull() && m.UseMainAccount.IsNull() &&
+		m.OperatingSystem.IsNull() && m.Protocol.IsNull() &&
+		m.PasswordPolicyID.IsNull() && m.ScriptTemplateID.IsNull() &&
+		m.CertificateValidationOptions.IsNull() &&
+		m.WinrmHostCertificateTrustAnchors.IsNull() &&
+		m.WinrmAddress.IsNull() && m.WinrmPort.IsNull() {
+		return nil
+	}
+
+	// If required fields not set -> return nil
+	if isUnsetBool(m.UseMainAccount) ||
+		isUnsetString(m.OperatingSystem) ||
+		isUnsetString(m.Protocol) ||
+		isUnsetString(m.PasswordPolicyID) ||
+		isUnsetString(m.ScriptTemplateID) {
+		return nil
+	}
+
+	cvo := "DISABLED"
+	if !isUnsetString(m.CertificateValidationOptions) {
+		cvo = m.CertificateValidationOptions.ValueString()
+	}
+
+	rm := &hoststore.RotationMetadata{
+		UseMainAccount:                   m.UseMainAccount.ValueBool(),
+		OperatingSystem:                  m.OperatingSystem.ValueString(),
+		Protocol:                         m.Protocol.ValueString(),
+		PasswordPolicyId:                 m.PasswordPolicyID.ValueString(),
+		ScriptTemplateId:                 m.ScriptTemplateID.ValueString(),
+		CertificateValidationOptions:     cvo,
+		WinRMHostCertificateTrustAnchors: m.WinrmHostCertificateTrustAnchors.ValueString(),
+	}
+
+	if !isUnsetString(m.AccessGroupID) {
+		rm.AccessGroupID = m.AccessGroupID.ValueString()
+	}
+
+	// Only set WinRM fields when protocol is WINRM (avoid polluting SSH configs)
+	if rm.Protocol == "WINRM" {
+		rm.WinrmAddress = m.WinrmAddress.ValueString()
+		rm.WinrmPort = int(m.WinrmPort.ValueInt64())
+	}
+
+	return rm
+}
+
+func boolOrFalse(v types.Bool) bool {
+	if v.IsNull() || v.IsUnknown() {
+		return false
+	}
+	return v.ValueBool()
+}
+
+func boolIsKnown(v types.Bool) bool {
+	return !v.IsNull() && !v.IsUnknown()
+}
+
+// helper: empty string from API should be treated as DISABLED
+func certValidationOrDefault(v string) attr.Value {
+	if v == "" {
+		return types.StringValue("DISABLED")
+	}
+	return types.StringValue(v)
 }

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/vault"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
@@ -153,21 +154,22 @@ func (d *SecretDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	}
 
 	// Populate the data source model
-	d.populateSecretDataSourceModel(ctx, &data, secret)
+	d.populateSecretDataSourceModel(&data, secret)
 
 	tflog.Debug(ctx, "Storing secret into the state", map[string]interface{}{
-		"state": fmt.Sprintf("%+v", data),
+		"name": data.Name.ValueString(),
+		"path": data.Path.ValueString(),
 	})
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// populateSecretDataSourceModel populates the Terraform data source model from the API response
-func (d *SecretDataSource) populateSecretDataSourceModel(ctx context.Context, data *SecretDataSourceModel, secret *vault.Secret) {
+// populateSecretDataSourceModel populates the Terraform data source model from the API response.
+func (d *SecretDataSource) populateSecretDataSourceModel(data *SecretDataSourceModel, secret *vault.Secret) {
 	data.Name = types.StringValue(secret.Name)
 	data.OwnerID = types.StringValue(secret.OwnerID)
-	data.Created = types.StringValue(secret.Created.Format("2006-01-02T15:04:05Z"))
-	data.Updated = types.StringValue(secret.Updated.Format("2006-01-02T15:04:05Z"))
+	data.Created = types.StringValue(secret.Created.UTC().Format(time.RFC3339))
+	data.Updated = types.StringValue(secret.Updated.UTC().Format(time.RFC3339))
 	data.UpdatedBy = types.StringValue(secret.UpdatedBy)
 	data.Author = types.StringValue(secret.Author)
 	data.Path = types.StringValue(secret.Path)

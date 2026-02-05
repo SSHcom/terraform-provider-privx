@@ -16,7 +16,7 @@ Whitelist resource for command restrictions
 resource "privx_whitelist" "example" {
   name    = "example-whitelist"
   comment = "Example whitelist for command restrictions"
-  type    = "command"
+  type    = "glob"
   whitelist_patterns = [
     "ls -la",
     "cat /etc/passwd",
@@ -29,14 +29,14 @@ resource "privx_whitelist" "example" {
 # Whitelist with minimal configuration
 resource "privx_whitelist" "minimal" {
   name = "minimal-whitelist"
-  type = "command"
+  type = "glob"
 }
 
 # Whitelist for development environment
 resource "privx_whitelist" "dev_commands" {
   name    = "dev-environment-whitelist"
   comment = "Allowed commands for development environment"
-  type    = "command"
+  type    = "glob"
   whitelist_patterns = [
     "git *",
     "npm *",
@@ -58,7 +58,7 @@ resource "privx_whitelist" "dev_commands" {
 ### Optional
 
 - `comment` (String) Whitelist comment/description
-- `type` (String) Whitelist type
+- `type` (String) Whitelist type (`glob` or `regex`)
 - `whitelist_patterns` (Set of String) List of command patterns allowed by this whitelist
 
 ### Read-Only

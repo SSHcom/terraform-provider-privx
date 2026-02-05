@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"terraform-provider-privx/internal/utils"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/authorizer"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
@@ -138,15 +139,17 @@ func (r *AccessGroupResource) Create(ctx context.Context, req resource.CreateReq
 func (r *AccessGroupResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data *AccessGroupResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	accessGroup, err := r.client.GetAccessGroup(data.ID.ValueString())
 	if err != nil {
+		if utils.IsPrivxNotFound(err) { // looks for OBJECT_NOT_FOUND
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read access group, got error: %s", err))
 		return
 	}
@@ -154,10 +157,6 @@ func (r *AccessGroupResource) Read(ctx context.Context, req resource.ReadRequest
 	data.Name = types.StringValue(accessGroup.Name)
 	data.Comment = types.StringValue(accessGroup.Comment)
 
-	tflog.Debug(ctx, "Storing access group type into the state", map[string]interface{}{
-		"createNewState": fmt.Sprintf("%+v", data),
-	})
-	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -207,11 +206,14 @@ func (r *AccessGroupResource) Delete(ctx context.Context, req resource.DeleteReq
 	}
 
 	err := r.client.DeleteAccessGroup(data.ID.ValueString())
-
 	if err != nil {
+		if utils.IsPrivxNotFound(err) {
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete access group, got error: %s", err))
 		return
 	}
+
 }
 
 func (r *AccessGroupResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

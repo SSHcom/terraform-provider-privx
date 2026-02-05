@@ -298,6 +298,11 @@ func (r *RoleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 
 	role, err := r.client.GetRole(data.ID.ValueString())
 	if err != nil {
+		if utils.IsPrivxNotFound(err) {
+			// Deleted outside Terraform → remove from state so Terraform can recreate
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read role, got error: %s", err))
 		return
 	}
@@ -413,11 +418,15 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	err := r.client.DeleteRole(data.ID.ValueString())
-
 	if err != nil {
+		if utils.IsPrivxNotFound(err) {
+			// Already deleted out-of-band → treat as successful delete
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete role, got error: %s", err))
 		return
 	}
+
 }
 
 func (r *RoleResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

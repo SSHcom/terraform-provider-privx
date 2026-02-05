@@ -257,17 +257,7 @@ func (p *privxProvider) Configure(ctx context.Context, req provider.ConfigureReq
 
 	tflog.Debug(ctx, "Creating PrivX client")
 
-	// Use connection pool to avoid authentication race conditions
-	config := client.ConnectionConfig{
-		APIBaseURL:        apiBaseURL,
-		BearerToken:       apiBearerToken,
-		APIClientID:       apiClientID,
-		APIClientSecret:   apiClientSecret,
-		OAuthClientID:     oauthClientID,
-		OAuthClientSecret: oauthClientSecret,
-	}
-
-	connector, err := client.GetConnector(config)
+	connector, err := client.NewConnector(apiBaseURL, apiBearerToken, apiClientID, apiClientSecret, oauthClientID, oauthClientSecret)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to create PrivX client",
@@ -284,35 +274,43 @@ func (p *privxProvider) Configure(ctx context.Context, req provider.ConfigureReq
 
 func (p *privxProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		NewApiProxyCredentialResource,
+		NewAPITargetResource,
 		NewAccessGroupResource,
-		NewAPIClientResource,
 		NewExtenderResource,
-		NewCarrierResource,
 		NewHostResource,
 		NewRoleResource,
 		NewSecretResource,
-		//NewSourceResource,
+		NewSourceResource,
+		NewAPIClientResource,
+		NewCarrierResource,
 		NewWorkflowResource,
 		NewWhitelistResource,
+		NewLocalUserResource,
+		NewLocalUserPasswordResource,
+		NewNetworkTargetResource,
 	}
 }
 
 func (p *privxProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
+		NewAPITargetDataSource,
+		NewApiProxyConfigDataSource,
+		NewPasswordPolicyDataSource,
+		NewScriptTemplateDataSource,
 		NewAccessGroupDataSource,
 		NewAPIClientDataSource,
 		NewCarrierConfigDataSource,
 		NewExtenderDataSource,
 		NewExtenderConfigDataSource,
-		NewCarrierDataSource,
-		NewHostDataSource,
-		NewWebProxyConfigDataSource,
 		NewWebProxyDataSource,
+		NewWebProxyConfigDataSource,
 		NewRoleDataSource,
 		NewSecretDataSource,
 		NewSourceDataSource,
 		NewWorkflowDataSource,
 		NewWhitelistDataSource,
+		NewCarrierDataSource,
 	}
 }
 

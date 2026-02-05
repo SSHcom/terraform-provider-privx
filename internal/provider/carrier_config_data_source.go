@@ -124,6 +124,7 @@ func (d *CarrierConfigDataSource) Read(ctx context.Context, req datasource.ReadR
 	}
 
 	// Read the downloaded config file
+	// #nosec G304 -- configFileName is created in a fresh temp dir controlled by us, not user input.
 	configContent, err := os.ReadFile(configFileName)
 	if err != nil {
 		resp.Diagnostics.AddError("File System Error", fmt.Sprintf("Unable to read downloaded config file, got error: %s", err))

@@ -41,13 +41,13 @@ type WorkflowResourceRoleModel struct {
 }
 
 type WorkflowResourceApproverModel struct {
-	Role *WorkflowResourceRoleModel `tfsdk:"role"`
+	Role WorkflowResourceRoleModel `tfsdk:"role"`
 }
 
 type WorkflowResourceStepModel struct {
-	Name      types.String                    `tfsdk:"name"`
-	Match     types.String                    `tfsdk:"match"`
-	Approvers []WorkflowResourceApproverModel `tfsdk:"approvers"`
+	Name      types.String `tfsdk:"name"`
+	Match     types.String `tfsdk:"match"`
+	Approvers types.Set    `tfsdk:"approvers"`
 }
 
 // WorkflowResourceModel describes the resource data model.
@@ -311,9 +311,17 @@ func (r *WorkflowResource) Create(ctx context.Context, req resource.CreateReques
 	}
 
 	var stepsPayload []workflow.WorkflowStep
+
 	for _, step := range stepsModels {
+		// Decode approvers (types.Set -> []WorkflowResourceApproverModel)
+		var approverModels []WorkflowResourceApproverModel
+		resp.Diagnostics.Append(step.Approvers.ElementsAs(ctx, &approverModels, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
 		var approversPayload []workflow.WorkflowStepApprover
-		for _, approver := range step.Approvers {
+		for _, approver := range approverModels {
 			approversPayload = append(approversPayload, workflow.WorkflowStepApprover{
 				Role: workflow.WorkflowRole{
 					ID:   approver.Role.ID.ValueString(),
@@ -378,6 +386,18 @@ func (r *WorkflowResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
+	/*fmt.Printf(
+		"WORKFLOW READ BACK:\n"+
+			"  id=%s\n"+
+			"  comment=%q\n"+
+			"  max_active_requests=%d\n"+
+			"  steps=%+v\n\n",
+		data.ID.ValueString(),
+		workflowData.Comment,
+		workflowData.MaxActiveRequests,
+		workflowData.Steps,
+	)*/
+
 	data.Name = types.StringValue(workflowData.Name)
 	data.Comment = types.StringValue(workflowData.Comment)
 	data.Action = types.StringValue(workflowData.Action)
@@ -440,21 +460,41 @@ func (r *WorkflowResource) Read(ctx context.Context, req resource.ReadRequest, r
 
 	var stepModels []WorkflowResourceStepModel
 
+	approverObjectType := types.ObjectType{
+		AttrTypes: map[string]attr.Type{
+			"role": types.ObjectType{
+				AttrTypes: map[string]attr.Type{
+					"id":   types.StringType,
+					"name": types.StringType,
+				},
+			},
+		},
+	}
+
 	for _, s := range workflowData.Steps {
+		// Build []WorkflowResourceApproverModel from API
 		var approverModels []WorkflowResourceApproverModel
 		for _, a := range s.Approvers {
 			approverModels = append(approverModels, WorkflowResourceApproverModel{
-				Role: &WorkflowResourceRoleModel{
+				Role: WorkflowResourceRoleModel{
 					ID:   types.StringValue(a.Role.ID),
 					Name: types.StringValue(a.Role.Name),
 				},
 			})
 		}
 
+		// Convert []WorkflowResourceApproverModel -> types.Set
+		approversSet, diags := types.SetValueFrom(ctx, approverObjectType, approverModels)
+		if diags.HasError() {
+			resp.Diagnostics.Append(diags...)
+			return
+		}
+
+		// Put into step model (Approvers is now types.Set)
 		stepModels = append(stepModels, WorkflowResourceStepModel{
 			Name:      types.StringValue(s.Name),
 			Match:     types.StringValue(s.Match),
-			Approvers: approverModels,
+			Approvers: approversSet,
 		})
 	}
 
@@ -500,6 +540,17 @@ func (r *WorkflowResource) Update(ctx context.Context, req resource.UpdateReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	var mar types.Int64
+	diags := req.Plan.GetAttribute(ctx, path.Root("max_active_requests"), &mar)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	/*
+		fmt.Printf("PLAN max_active_requests = %d (isNull=%v isUnknown=%v)\n",
+			mar.ValueInt64(), mar.IsNull(), mar.IsUnknown())
+	*/
 
 	// Convert grant types
 	var grantTypesPayload []string
@@ -548,9 +599,17 @@ func (r *WorkflowResource) Update(ctx context.Context, req resource.UpdateReques
 	}
 
 	var stepsPayload []workflow.WorkflowStep
+
 	for _, step := range stepsModels {
+		// Decode approvers set -> []WorkflowResourceApproverModel
+		var approverModels []WorkflowResourceApproverModel
+		resp.Diagnostics.Append(step.Approvers.ElementsAs(ctx, &approverModels, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
 		var approversPayload []workflow.WorkflowStepApprover
-		for _, approver := range step.Approvers {
+		for _, approver := range approverModels {
 			approversPayload = append(approversPayload, workflow.WorkflowStepApprover{
 				Role: workflow.WorkflowRole{
 					ID:   approver.Role.ID.ValueString(),
@@ -565,6 +624,8 @@ func (r *WorkflowResource) Update(ctx context.Context, req resource.UpdateReques
 			Approvers: approversPayload,
 		})
 	}
+
+	//fmt.Printf("PLAN stepsPayload  = %+v\n", stepsPayload)
 
 	// Get current workflow data to include read-only fields
 	currentWorkflow, err := r.client.GetWorkflow(data.ID.ValueString())
@@ -593,6 +654,20 @@ func (r *WorkflowResource) Update(ctx context.Context, req resource.UpdateReques
 		Steps:                     stepsPayload,
 		RequiresJustification:     data.RequiresJustification.ValueBool(),
 	}
+
+	/*fmt.Printf(
+		"\nWORKFLOW UPDATE PAYLOAD:\n"+
+			"  id=%s\n"+
+			"  max_active_requests=%d\n"+
+			"  max_floating_duration=%d\n"+
+			"  max_time_restricted_duration=%d\n"+
+			"  steps=%+v\n\n",
+		data.ID.ValueString(),
+		data.MaxActiveRequests.ValueInt64(),
+		data.MaxFloatingDuration.ValueInt64(),
+		data.MaxTimeRestrictedDuration.ValueInt64(),
+		stepsPayload,
+	)*/
 
 	tflog.Debug(ctx, fmt.Sprintf("workflow.Workflow model used: %+v", workflowPayload))
 

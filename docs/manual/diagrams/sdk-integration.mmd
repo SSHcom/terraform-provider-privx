@@ -1,0 +1,63 @@
+classDiagram
+  class privxProvider {
+    -version string
+    +Metadata(...)
+    +Schema(...)
+    +Configure(...)
+    +Resources() []func() resource.Resource
+    +DataSources() []func() datasource.DataSource
+  }
+
+  class privxProviderModel {
+    +api_base_url String
+    +api_bearer_token String
+    +api_client_id String
+    +api_client_secret String
+    +api_oauth_client_id String
+    +api_oauth_client_secret String
+    +debug Bool
+  }
+
+  class ConnectorFactory {
+    +NewConnector(apiBaseURL, bearerToken, apiClientID, apiClientSecret, oauthClientID, oauthClientSecret) *restapi.Connector
+  }
+
+  class AccessGroupResource {
+    -client *authorizer.Authorizer
+    +Metadata(...)
+    +Schema(...)
+    +Configure(...)
+    +Create(...)
+    +Read(...)
+    +Update(...)
+    +Delete(...)
+    +ImportState(...)
+  }
+
+  class AccessGroupDataSource {
+    -client *authorizer.Authorizer
+    +Metadata(...)
+    +Schema(...)
+    +Configure(...)
+    +ConfigValidators(...)
+    +Read(...)
+  }
+
+  class restapi.Connector
+  class authorizer.Authorizer {
+    +CreateAccessGroup(...)
+    +GetAccessGroup(...)
+    +GetAccessGroups(...)
+    +UpdateAccessGroup(...)
+    +DeleteAccessGroup(...)
+  }
+
+  privxProvider --> privxProviderModel : uses for config
+  privxProvider --> ConnectorFactory : calls NewConnector
+  ConnectorFactory --> restapi.Connector : constructs
+  privxProvider --> restapi.Connector : exposes via ProviderData
+  restapi.Connector --> AccessGroupResource : injected via Configure
+  restapi.Connector --> AccessGroupDataSource : injected via Configure
+  AccessGroupResource --> authorizer.Authorizer : instantiates with connector
+  AccessGroupDataSource --> authorizer.Authorizer : instantiates with connector
+  authorizer.Authorizer --> restapi.Connector : uses for HTTP transport

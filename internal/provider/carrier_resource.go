@@ -3,16 +3,18 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
+	"terraform-provider-privx/internal/utils"
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/userstore"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -32,21 +34,22 @@ type CarrierResource struct {
 	client *userstore.UserStore
 }
 
-// CarrierResourceModel contains PrivX carrier information.
+// Carrier contains PrivX carrier information.
 type CarrierResourceModel struct {
 	ID                            types.String `tfsdk:"id"`
-	Name                          types.String `tfsdk:"name"`
-	AccessGroupID                 types.String `tfsdk:"access_group_id"`
-	GroupID                       types.String `tfsdk:"group_id"`
-	Secret                        types.String `tfsdk:"secret"`
+	Type                          types.String `tfsdk:"type"`
 	Enabled                       types.Bool   `tfsdk:"enabled"`
-	Registered                    types.Bool   `tfsdk:"registered"`
-	Permissions                   types.List   `tfsdk:"permissions"`
 	RoutingPrefix                 types.String `tfsdk:"routing_prefix"`
-	ExtenderAddress               types.List   `tfsdk:"extender_address"`
-	Subnets                       types.List   `tfsdk:"subnets"`
+	Name                          types.String `tfsdk:"name"`
+	Permissions                   types.List   `tfsdk:"permissions"`
 	WebProxyAddress               types.String `tfsdk:"web_proxy_address"`
-	WebProxyExtenderRoutePatterns types.List   `tfsdk:"web_proxy_extender_route_patterns"`
+	WebProxyPort                  types.Int64  `tfsdk:"web_proxy_port"`
+	WebProxyExtenderRoutePatterns types.Set    `tfsdk:"web_proxy_extender_route_patterns"`
+	ExtenderAddress               types.Set    `tfsdk:"extender_address"`
+	Subnets                       types.Set    `tfsdk:"subnets"`
+	Registered                    types.Bool   `tfsdk:"registered"`
+	AccessGroupId                 types.String `tfsdk:"access_group_id"`
+	GroupID                       types.String `tfsdk:"group_id"`
 }
 
 func (r *CarrierResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -55,7 +58,8 @@ func (r *CarrierResource) Metadata(ctx context.Context, req resource.MetadataReq
 
 func (r *CarrierResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Carrier resource for PrivX",
+		// This description is used by the documentation generator and the language server.
+		MarkdownDescription: "Carrier resource",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Carrier ID",
@@ -64,81 +68,108 @@ func (r *CarrierResource) Schema(ctx context.Context, req resource.SchemaRequest
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"type": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("CARRIER"),
+			},
+			"enabled": schema.BoolAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(true),
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+
+			"routing_prefix": schema.StringAttribute{
+				MarkdownDescription: "Routing Prefix",
+				Optional:            true,
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Carrier name",
 				Required:            true,
 			},
-			"access_group_id": schema.StringAttribute{
-				MarkdownDescription: "Access Group ID",
-				Optional:            true,
-				Computed:            true,
-				Default:             stringdefault.StaticString(""),
-			},
-			"group_id": schema.StringAttribute{
-				MarkdownDescription: "Group ID for the carrier",
-				Computed:            true,
-			},
-			"secret": schema.StringAttribute{
-				MarkdownDescription: "Client Secret",
-				Computed:            true,
-				Sensitive:           true,
-			},
-			"enabled": schema.BoolAttribute{
-				MarkdownDescription: "Whether the carrier is enabled",
-				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(true),
-			},
-			"registered": schema.BoolAttribute{
-				MarkdownDescription: "Whether the carrier is registered",
-				Computed:            true,
-			},
 			"permissions": schema.ListAttribute{
-				MarkdownDescription: "List of permissions for the carrier",
 				ElementType:         types.StringType,
-				Optional:            true,
+				MarkdownDescription: "Carrier permissions",
 				Computed:            true,
-			},
-			"routing_prefix": schema.StringAttribute{
-				MarkdownDescription: "Routing prefix for the carrier",
-				Optional:            true,
-				Computed:            true,
-				Default:             stringdefault.StaticString(""),
-			},
-			"extender_address": schema.ListAttribute{
-				MarkdownDescription: "List of extender addresses",
-				ElementType:         types.StringType,
-				Optional:            true,
-				Computed:            true,
-			},
-			"subnets": schema.ListAttribute{
-				MarkdownDescription: "List of subnets for the carrier",
-				ElementType:         types.StringType,
-				Optional:            true,
-				Computed:            true,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"web_proxy_address": schema.StringAttribute{
-				MarkdownDescription: "Web proxy address for the carrier",
-				Optional:            true,
-				Computed:            true,
-				Default:             stringdefault.StaticString(""),
+				MarkdownDescription: "Web Proxy address",
+				Required:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
-			"web_proxy_extender_route_patterns": schema.ListAttribute{
-				MarkdownDescription: "List of web proxy extender route patterns",
+			"web_proxy_port": schema.Int64Attribute{
+				MarkdownDescription: "Web Proxy address",
+				Optional:            true,
+			},
+			"web_proxy_extender_route_patterns": schema.SetAttribute{
 				ElementType:         types.StringType,
+				MarkdownDescription: "Web Proxy Extender Route Patterns",
+				Optional:            true,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"extender_address": schema.SetAttribute{
+				ElementType:         types.StringType,
+				MarkdownDescription: "Extender addresses",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"subnets": schema.SetAttribute{
+				ElementType:         types.StringType,
+				MarkdownDescription: "Subnets",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"access_group_id": schema.StringAttribute{
+				Optional: true,
+				Computed: true, // safe if backend sets/returns default/empty
+				Default:  stringdefault.StaticString(""),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"group_id": schema.StringAttribute{
+				MarkdownDescription: "Group ID",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"registered": schema.BoolAttribute{
+				MarkdownDescription: "Carrier registered",
+				Computed:            true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
 }
 
 func (r *CarrierResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
 
 	connector, ok := req.ProviderData.(*restapi.Connector)
+
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
@@ -146,153 +177,156 @@ func (r *CarrierResource) Configure(ctx context.Context, req resource.ConfigureR
 		)
 		return
 	}
-
-	tflog.Debug(ctx, "Creating userstore client", map[string]interface{}{
-		"connector": fmt.Sprintf("%+v", *connector),
+	tflog.Debug(ctx, "Creating userstore", map[string]interface{}{
+		"connector : ": fmt.Sprintf("%+v", *connector),
 	})
 
 	r.client = userstore.New(*connector)
 }
 
 func (r *CarrierResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data *CarrierResourceModel
+	var data CarrierResourceModel
 
+	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	tflog.Debug(ctx, "Loaded carrier data", map[string]interface{}{
+	tflog.Debug(ctx, "Loaded Carrier type data", map[string]interface{}{
 		"data": fmt.Sprintf("%+v", data),
 	})
 
-	// Convert permissions list to string slice
-	var permissions []string
-	if !data.Permissions.IsNull() && !data.Permissions.IsUnknown() {
-		data.Permissions.ElementsAs(ctx, &permissions, false)
-	}
+	permissionPayload := []string{"privx-carrier"}
 
-	// Convert extender_address list to string slice
-	var extenderAddress []string
+	var extenderAddressPayload []string
 	if !data.ExtenderAddress.IsNull() && !data.ExtenderAddress.IsUnknown() {
-		data.ExtenderAddress.ElementsAs(ctx, &extenderAddress, false)
+		resp.Diagnostics.Append(data.ExtenderAddress.ElementsAs(ctx, &extenderAddressPayload, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 	}
 
-	// Convert subnets list to string slice
-	var subnets []string
+	var subnetsPayload []string
 	if !data.Subnets.IsNull() && !data.Subnets.IsUnknown() {
-		data.Subnets.ElementsAs(ctx, &subnets, false)
+		resp.Diagnostics.Append(data.Subnets.ElementsAs(ctx, &subnetsPayload, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 	}
 
-	// Convert web_proxy_extender_route_patterns list to string slice
-	var webProxyRoutePatterns []string
+	var WebProxyExtenderRoutPattersPayload []string
 	if !data.WebProxyExtenderRoutePatterns.IsNull() && !data.WebProxyExtenderRoutePatterns.IsUnknown() {
-		data.WebProxyExtenderRoutePatterns.ElementsAs(ctx, &webProxyRoutePatterns, false)
+		resp.Diagnostics.Append(data.WebProxyExtenderRoutePatterns.ElementsAs(ctx, &WebProxyExtenderRoutPattersPayload, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 	}
 
-	trustedClient := userstore.TrustedClient{
+	carrier := userstore.TrustedClient{
+		Type:                          data.Type.ValueString(),
 		Name:                          data.Name.ValueString(),
-		Type:                          "CARRIER",
-		AccessGroupID:                 data.AccessGroupID.ValueString(),
 		Enabled:                       data.Enabled.ValueBool(),
-		Permissions:                   permissions,
-		RoutingPrefix:                 data.RoutingPrefix.ValueString(),
-		ExtenderAddress:               extenderAddress,
-		Subnets:                       subnets,
+		Permissions:                   permissionPayload,
+		AccessGroupID:                 data.AccessGroupId.ValueString(),
+		GroupID:                       data.GroupID.ValueString(),
+		ExtenderAddress:               extenderAddressPayload,
 		WebProxyAddress:               data.WebProxyAddress.ValueString(),
-		WebProxyExtenderRoutePatterns: webProxyRoutePatterns,
+		WebProxyExtenderRoutePatterns: WebProxyExtenderRoutPattersPayload,
+		Subnets:                       subnetsPayload,
+		RoutingPrefix:                 data.RoutingPrefix.ValueString(),
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("userstore.TrustedClient model used: %+v", trustedClient))
+	tflog.Debug(ctx, fmt.Sprintf("userstore.TrustedClient model used: %+v", carrier))
 
-	createdClient, err := r.client.CreateTrustedClient(&trustedClient)
+	carrierID, err := r.client.CreateTrustedClient(&carrier)
+
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to Create Carrier",
-			"An unexpected error occurred while attempting to create the carrier.\n"+
+			"Unable to Create Resource",
+			"An unexpected error occurred while attempting to create the resource.\n"+
 				err.Error(),
 		)
 		return
 	}
 
-	data.ID = types.StringValue(createdClient.ID)
+	// Convert from the API data model to the Terraform data model
+	// and set any unknown attribute values.
+	data.ID = types.StringValue(carrierID.ID)
 
-	// Read back the created resource to populate all computed fields
-	trustedClientRead, err := r.client.GetTrustedClient(createdClient.ID)
+	carrierRead, err := r.client.GetTrustedClient(data.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read created carrier, got error: %s", err))
+		resp.Diagnostics.AddError(
+			"Unable to Read Resource",
+			"An unexpected error occurred while attempting to read the resource.\n"+
+				err.Error(),
+		)
 		return
 	}
+	data.Registered = types.BoolValue(carrierRead.Registered)
 
-	// Populate all the computed fields from the API response
-	data.Name = types.StringValue(trustedClientRead.Name)
-	data.AccessGroupID = types.StringValue(trustedClientRead.AccessGroupID)
-	data.GroupID = types.StringValue(trustedClientRead.GroupID)
-	data.Secret = types.StringValue(trustedClientRead.Secret)
-	data.Enabled = types.BoolValue(trustedClientRead.Enabled)
-	data.Registered = types.BoolValue(trustedClientRead.Registered)
-	data.RoutingPrefix = types.StringValue(trustedClientRead.RoutingPrefix)
-	data.WebProxyAddress = types.StringValue(trustedClientRead.WebProxyAddress)
+	/*
+		// access_group_id is user-defined
+		// do NOT set it from API response
+		if carrierRead.AccessGroupID != "" {
+			data.AccessGroupId = types.StringValue(carrierRead.AccessGroupID)
+		}*/
 
-	// Convert permissions slice to list
-	permissionValues := make([]attr.Value, len(trustedClientRead.Permissions))
-	for i, perm := range trustedClientRead.Permissions {
-		permissionValues[i] = types.StringValue(perm)
+	data.GroupID = types.StringValue(carrierRead.GroupID)
+	permissions, diags := types.ListValueFrom(ctx, types.StringType, carrierRead.Permissions)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	data.Permissions = types.ListValueMust(types.StringType, permissionValues)
+	data.Permissions = permissions
 
-	// Convert extender_address slice to list
-	extenderValues := make([]attr.Value, len(trustedClientRead.ExtenderAddress))
-	for i, addr := range trustedClientRead.ExtenderAddress {
-		extenderValues[i] = types.StringValue(addr)
+	extenderSet, diags := types.SetValueFrom(ctx, types.StringType, carrierRead.ExtenderAddress)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	data.ExtenderAddress = types.ListValueMust(types.StringType, extenderValues)
+	data.ExtenderAddress = extenderSet
 
-	// Convert subnets slice to list
-	subnetValues := make([]attr.Value, len(trustedClientRead.Subnets))
-	for i, subnet := range trustedClientRead.Subnets {
-		subnetValues[i] = types.StringValue(subnet)
+	data.Type = types.StringValue(carrierRead.Type)
+	data.WebProxyAddress = types.StringValue(carrierRead.WebProxyAddress)
+	if carrierRead.AccessGroupID != "" {
+		data.AccessGroupId = types.StringValue(carrierRead.AccessGroupID)
 	}
-	data.Subnets = types.ListValueMust(types.StringType, subnetValues)
 
-	// Convert web_proxy_extender_route_patterns slice to list
-	routePatternValues := make([]attr.Value, len(trustedClientRead.WebProxyExtenderRoutePatterns))
-	for i, pattern := range trustedClientRead.WebProxyExtenderRoutePatterns {
-		routePatternValues[i] = types.StringValue(pattern)
+	subnetsSet, diags := types.SetValueFrom(ctx, types.StringType, carrierRead.Subnets)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	data.WebProxyExtenderRoutePatterns = types.ListValueMust(types.StringType, routePatternValues)
+	data.Subnets = subnetsSet
 
+	patternsSet, diags := types.SetValueFrom(ctx, types.StringType, carrierRead.WebProxyExtenderRoutePatterns)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.WebProxyExtenderRoutePatterns = patternsSet
+
+	// Write logs using the tflog package
+	// Documentation: https://terraform.io/plugin/log
 	tflog.Debug(ctx, "created carrier resource")
+
+	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *CarrierResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data *CarrierResourceModel
+	var data CarrierResourceModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	trustedClient, err := r.client.GetTrustedClient(data.ID.ValueString())
+	carrier, err := r.client.GetTrustedClient(data.ID.ValueString())
 	if err != nil {
-		// Log the full error for debugging
-		errorStr := err.Error()
-		tflog.Debug(ctx, "Error reading carrier", map[string]interface{}{
-			"id":    data.ID.ValueString(),
-			"error": errorStr,
-		})
-
-		// Check if the error indicates the resource no longer exists
-		// PrivX may return BAD_REQUEST when a trusted client ID doesn't exist
-		if strings.Contains(errorStr, "NOT_FOUND") ||
-			strings.Contains(errorStr, "404") ||
-			strings.Contains(errorStr, "BAD_REQUEST") {
-			// Resource likely no longer exists, remove from state
-			tflog.Info(ctx, "Carrier resource appears to be deleted, removing from state", map[string]interface{}{
-				"id":    data.ID.ValueString(),
-				"error": errorStr,
-			})
+		if utils.IsPrivxNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -300,165 +334,179 @@ func (r *CarrierResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	data.Name = types.StringValue(trustedClient.Name)
-	data.AccessGroupID = types.StringValue(trustedClient.AccessGroupID)
-	data.GroupID = types.StringValue(trustedClient.GroupID)
-	data.Secret = types.StringValue(trustedClient.Secret)
-	data.Enabled = types.BoolValue(trustedClient.Enabled)
-	data.Registered = types.BoolValue(trustedClient.Registered)
-	data.RoutingPrefix = types.StringValue(trustedClient.RoutingPrefix)
-	data.WebProxyAddress = types.StringValue(trustedClient.WebProxyAddress)
+	// Scalars
+	data.ID = types.StringValue(carrier.ID) // if carrier.ID exists; otherwise keep existing
+	data.Name = types.StringValue(carrier.Name)
+	data.Enabled = types.BoolValue(carrier.Enabled)
+	data.RoutingPrefix = types.StringValue(carrier.RoutingPrefix)
 
-	// Convert permissions slice to list
-	permissionValues := make([]attr.Value, len(trustedClient.Permissions))
-	for i, perm := range trustedClient.Permissions {
-		permissionValues[i] = types.StringValue(perm)
+	// IMPORTANT: fill these (your import diff shows they are missing)
+	data.Type = types.StringValue(carrier.Type)
+	data.WebProxyAddress = types.StringValue(carrier.WebProxyAddress)
+	if carrier.AccessGroupID != "" {
+		data.AccessGroupId = types.StringValue(carrier.AccessGroupID)
 	}
-	data.Permissions = types.ListValueMust(types.StringType, permissionValues)
 
-	// Convert extender_address slice to list
-	extenderValues := make([]attr.Value, len(trustedClient.ExtenderAddress))
-	for i, addr := range trustedClient.ExtenderAddress {
-		extenderValues[i] = types.StringValue(addr)
+	data.Registered = types.BoolValue(carrier.Registered)
+	data.GroupID = types.StringValue(carrier.GroupID)
+
+	// Lists
+	subnetsSet, diags := types.SetValueFrom(ctx, types.StringType, carrier.Subnets)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	data.ExtenderAddress = types.ListValueMust(types.StringType, extenderValues)
+	data.Subnets = subnetsSet
 
-	// Convert subnets slice to list
-	subnetValues := make([]attr.Value, len(trustedClient.Subnets))
-	for i, subnet := range trustedClient.Subnets {
-		subnetValues[i] = types.StringValue(subnet)
+	perms, diags := types.ListValueFrom(ctx, types.StringType, carrier.Permissions)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	data.Subnets = types.ListValueMust(types.StringType, subnetValues)
+	data.Permissions = perms
 
-	// Convert web_proxy_extender_route_patterns slice to list
-	routePatternValues := make([]attr.Value, len(trustedClient.WebProxyExtenderRoutePatterns))
-	for i, pattern := range trustedClient.WebProxyExtenderRoutePatterns {
-		routePatternValues[i] = types.StringValue(pattern)
+	extenderSet, diags := types.SetValueFrom(ctx, types.StringType, carrier.ExtenderAddress)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	data.WebProxyExtenderRoutePatterns = types.ListValueMust(types.StringType, routePatternValues)
+	data.ExtenderAddress = extenderSet
 
-	tflog.Debug(ctx, "Storing carrier into the state", map[string]interface{}{
-		"state": fmt.Sprintf("%+v", data),
-	})
+	patterns, diags := types.SetValueFrom(ctx, types.StringType, carrier.WebProxyExtenderRoutePatterns)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.WebProxyExtenderRoutePatterns = patterns
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *CarrierResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data *CarrierResourceModel
-
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	var plan CarrierResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	currentClient, err := r.client.GetTrustedClient(data.ID.ValueString())
+	// Read current object from API first
+	current, err := r.client.GetTrustedClient(plan.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read current carrier, got error: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read carrier before update, got error: %s", err))
 		return
 	}
 
-	currentClient.Name = data.Name.ValueString()
-	currentClient.Type = "CARRIER"
-	currentClient.AccessGroupID = data.AccessGroupID.ValueString()
-	currentClient.Enabled = data.Enabled.ValueBool()
-	currentClient.RoutingPrefix = data.RoutingPrefix.ValueString()
-	currentClient.WebProxyAddress = data.WebProxyAddress.ValueString()
-
-	// Convert permissions list to string slice
-	var permissions []string
-	if !data.Permissions.IsNull() && !data.Permissions.IsUnknown() {
-		data.Permissions.ElementsAs(ctx, &permissions, false)
+	// Build list payloads from plan (only if known)
+	var extenderAddressPayload []string
+	if !plan.ExtenderAddress.IsNull() && !plan.ExtenderAddress.IsUnknown() {
+		resp.Diagnostics.Append(plan.ExtenderAddress.ElementsAs(ctx, &extenderAddressPayload, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		current.ExtenderAddress = extenderAddressPayload
 	}
-	currentClient.Permissions = permissions
 
-	// Convert extender_address list to string slice
-	var extenderAddress []string
-	if !data.ExtenderAddress.IsNull() && !data.ExtenderAddress.IsUnknown() {
-		data.ExtenderAddress.ElementsAs(ctx, &extenderAddress, false)
+	var subnetsPayload []string
+	if !plan.Subnets.IsNull() && !plan.Subnets.IsUnknown() {
+		resp.Diagnostics.Append(plan.Subnets.ElementsAs(ctx, &subnetsPayload, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		current.Subnets = subnetsPayload
 	}
-	currentClient.ExtenderAddress = extenderAddress
 
-	// Convert subnets list to string slice
-	var subnets []string
-	if !data.Subnets.IsNull() && !data.Subnets.IsUnknown() {
-		data.Subnets.ElementsAs(ctx, &subnets, false)
+	var patternsPayload []string
+	if !plan.WebProxyExtenderRoutePatterns.IsNull() && !plan.WebProxyExtenderRoutePatterns.IsUnknown() {
+		resp.Diagnostics.Append(plan.WebProxyExtenderRoutePatterns.ElementsAs(ctx, &patternsPayload, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		current.WebProxyExtenderRoutePatterns = patternsPayload
 	}
-	currentClient.Subnets = subnets
 
-	// Convert web_proxy_extender_route_patterns list to string slice
-	var webProxyRoutePatterns []string
-	if !data.WebProxyExtenderRoutePatterns.IsNull() && !data.WebProxyExtenderRoutePatterns.IsUnknown() {
-		data.WebProxyExtenderRoutePatterns.ElementsAs(ctx, &webProxyRoutePatterns, false)
-	}
-	currentClient.WebProxyExtenderRoutePatterns = webProxyRoutePatterns
+	// Apply only the fields you actually want to change
+	current.Name = plan.Name.ValueString()
+	current.Enabled = plan.Enabled.ValueBool()
+	current.RoutingPrefix = plan.RoutingPrefix.ValueString()
+	current.WebProxyAddress = plan.WebProxyAddress.ValueString()
 
-	tflog.Debug(ctx, fmt.Sprintf("userstore.TrustedClient model used for update: %+v", currentClient))
+	// IMPORTANT: do NOT touch current.GroupID / current.AccessGroupID / current.Type / current.Permissions here
+	// Let them remain exactly as the API returned.
 
-	err = r.client.UpdateTrustedClient(data.ID.ValueString(), currentClient)
-	if err != nil {
+	// Debug print (stderr) if you want
+	// fmt.Fprintln(os.Stderr, "DEBUG update sending:", "id=", plan.ID.ValueString(), "enabled=", current.Enabled, "routing_prefix=", current.RoutingPrefix)
+
+	if err := r.client.UpdateTrustedClient(plan.ID.ValueString(), current); err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update carrier, got error: %s", err))
 		return
 	}
 
-	// Read back the updated resource to populate all computed fields
-	trustedClientRead, err := r.client.GetTrustedClient(data.ID.ValueString())
+	// Re-read and store state
+	updated, err := r.client.GetTrustedClient(plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read updated carrier, got error: %s", err))
 		return
 	}
 
-	// Populate all the computed fields from the API response
-	data.Name = types.StringValue(trustedClientRead.Name)
-	data.AccessGroupID = types.StringValue(trustedClientRead.AccessGroupID)
-	data.GroupID = types.StringValue(trustedClientRead.GroupID)
-	data.Secret = types.StringValue(trustedClientRead.Secret)
-	data.Enabled = types.BoolValue(trustedClientRead.Enabled)
-	data.Registered = types.BoolValue(trustedClientRead.Registered)
-	data.RoutingPrefix = types.StringValue(trustedClientRead.RoutingPrefix)
-	data.WebProxyAddress = types.StringValue(trustedClientRead.WebProxyAddress)
+	// Populate state from API (preserve access_group_id behavior if API omits it)
+	plan.Type = types.StringValue(updated.Type)
+	plan.Name = types.StringValue(updated.Name)
+	plan.Enabled = types.BoolValue(updated.Enabled)
+	plan.RoutingPrefix = types.StringValue(updated.RoutingPrefix)
+	plan.WebProxyAddress = types.StringValue(updated.WebProxyAddress)
+	plan.Registered = types.BoolValue(updated.Registered)
+	plan.GroupID = types.StringValue(updated.GroupID)
 
-	// Convert permissions slice to list
-	permissionValues := make([]attr.Value, len(trustedClientRead.Permissions))
-	for i, perm := range trustedClientRead.Permissions {
-		permissionValues[i] = types.StringValue(perm)
+	if updated.AccessGroupID != "" {
+		plan.AccessGroupId = types.StringValue(updated.AccessGroupID)
 	}
-	data.Permissions = types.ListValueMust(types.StringType, permissionValues)
 
-	// Convert extender_address slice to list
-	extenderValues := make([]attr.Value, len(trustedClientRead.ExtenderAddress))
-	for i, addr := range trustedClientRead.ExtenderAddress {
-		extenderValues[i] = types.StringValue(addr)
+	perms, diags := types.ListValueFrom(ctx, types.StringType, updated.Permissions)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	data.ExtenderAddress = types.ListValueMust(types.StringType, extenderValues)
+	plan.Permissions = perms
 
-	// Convert subnets slice to list
-	subnetValues := make([]attr.Value, len(trustedClientRead.Subnets))
-	for i, subnet := range trustedClientRead.Subnets {
-		subnetValues[i] = types.StringValue(subnet)
+	extSet, diags := types.SetValueFrom(ctx, types.StringType, updated.ExtenderAddress)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	data.Subnets = types.ListValueMust(types.StringType, subnetValues)
+	plan.ExtenderAddress = extSet
 
-	// Convert web_proxy_extender_route_patterns slice to list
-	routePatternValues := make([]attr.Value, len(trustedClientRead.WebProxyExtenderRoutePatterns))
-	for i, pattern := range trustedClientRead.WebProxyExtenderRoutePatterns {
-		routePatternValues[i] = types.StringValue(pattern)
+	subsSet, diags := types.SetValueFrom(ctx, types.StringType, updated.Subnets)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	data.WebProxyExtenderRoutePatterns = types.ListValueMust(types.StringType, routePatternValues)
+	plan.Subnets = subsSet
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	patsSet, diags := types.SetValueFrom(ctx, types.StringType, updated.WebProxyExtenderRoutePatterns)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.WebProxyExtenderRoutePatterns = patsSet
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *CarrierResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data *CarrierResourceModel
+	var data CarrierResourceModel
 
+	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	err := r.client.DeleteTrustedClient(data.ID.ValueString())
 	if err != nil {
+		if utils.IsPrivxNotFound(err) {
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete carrier, got error: %s", err))
 		return
 	}

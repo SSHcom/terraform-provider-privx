@@ -1,0 +1,30 @@
+flowchart LR
+  subgraph Terraform
+    TF[Terraform CLI]
+    PF[Terraform Plugin Framework<br/>providerserver]
+  end
+
+  subgraph Provider["terraform-provider-privx binary"]
+    P[privxProvider<br/>internal/provider/provider.go]
+    R[Resources<br/>internal/provider/*_resource.go]
+    D[Data Sources<br/>internal/provider/*_data_source.go]
+    C[Client adapter<br/>internal/client.NewConnector]
+  end
+
+  subgraph PrivXSDK["PrivX Go SDK"]
+    REST[restapi.Connector]
+    AUTH[restapi.Authorizer / oauth]
+    API[Service clients<br/>api/authorizer, api/*]
+  end
+
+  PrivX[PrivX API]
+
+  TF --> PF --> P
+  P -->|Configure| C
+  C --> AUTH --> REST
+  P -->|ResourceData / DataSourceData| R
+  P -->|ResourceData / DataSourceData| D
+  R --> API
+  D --> API
+  API --> REST
+  REST --> PrivX

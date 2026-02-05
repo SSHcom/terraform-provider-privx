@@ -108,15 +108,29 @@ func (d *RoleDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	}
 
 	// resolve role from role name
-	role_names_as_list := []string{data.Name.ValueString()}
-	roles, err := d.client.ResolveRoles(role_names_as_list)
+	roleName := data.Name.ValueString()
+	roleNames := []string{roleName}
+
+	roles, err := d.client.ResolveRoles(roleNames)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to resolves roles, got error: %s", err))
 		return
 	}
 
-	if len(roles.Items) == 0 {
-		resp.Diagnostics.AddError("ResolveRoles Error", fmt.Sprintf("Could not retrieve a role from name: %s", data.Name.ValueString()))
+	switch len(roles.Items) {
+	case 0:
+		resp.Diagnostics.AddError("ResolveRoles Error", fmt.Sprintf("Could not retrieve a role from name: %s", roleName))
+		return
+	case 1:
+		// ok
+	default:
+		resp.Diagnostics.AddError(
+			"Multiple roles found",
+			fmt.Sprintf(
+				"More than one role found with name %q. Use the role ID instead.",
+				roleName,
+			),
+		)
 		return
 	}
 
