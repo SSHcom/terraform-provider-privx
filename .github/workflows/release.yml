@@ -27,6 +27,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # Install syft for SBOM generation
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0
+
       # Import GPG key for signing release artifacts
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@v6
