@@ -18,12 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Checkout repository with full history for changelog generation
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       # Set up Go environment using version from go.mod
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -44,17 +44,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
 
-      # Generate Software Bill of Materials for security and compliance
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: sbom.cdx.json
 
-      # Upload SBOM to the release
-      - name: Upload SBOM to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: sbom.cdx.json
-          token: ${{ secrets.RELEASE_TOKEN }}
