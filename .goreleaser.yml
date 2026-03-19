@@ -51,7 +51,7 @@ signs:
 sboms:
   - artifacts: archive
     documents:
-      - '{{ .ProjectName }}_{{ .Version }}_sbom.cdx.json'
+      - '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_sbom.cdx.json'
 release:
   extra_files:
     - glob: 'terraform-registry-manifest.json'
