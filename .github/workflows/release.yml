@@ -18,12 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Checkout repository with full history for changelog generation
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       # Set up Go environment using version from go.mod
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
