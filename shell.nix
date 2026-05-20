@@ -36,7 +36,7 @@ pkgs.mkShell {
     golangci-lint
     pre-commit
     nodejs_24
-    nodePackages.mermaid-cli
+    mermaid-cli
     terraform-plugin-docs
     goreleaser
     gnupg

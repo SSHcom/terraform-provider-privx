@@ -73,6 +73,52 @@ func TestAccRoleResource_recreateAfterOutOfBandDelete(t *testing.T) {
 
 }
 
+func TestAccRoleResource_basicCreateUpdateDelete(t *testing.T) {
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("TF_ACC not set")
+	}
+
+	suffix := acctest.RandStringFromCharSet(6, acctest.CharSetAlphaNum)
+	roleName := fmt.Sprintf("tf-acc-test-role-crud-%s", suffix)
+	groupName := fmt.Sprintf("tf-acc-access-group-crud-%s", suffix)
+
+	cfgCreate := testAccRoleWithAccessGroupConfig(groupName, roleName)
+	cfgUpdate := testAccRoleWithAccessGroupUpdateConfig(groupName, roleName)
+	writeAccConfig(t, fmt.Sprintf("%s_step_1.tf", t.Name()), cfgCreate)
+	writeAccConfig(t, fmt.Sprintf("%s_step_2.tf", t.Name()), cfgUpdate)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+
+		Steps: []resource.TestStep{
+			{
+				Config: cfgCreate,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("privx_access_group.foo", "name", groupName),
+					resource.TestCheckResourceAttr("privx_role.test", "name", roleName),
+					resource.TestCheckResourceAttr("privx_role.test", "comment", ""),
+					resource.TestCheckResourceAttr("privx_role.test", "permissions.#", "1"),
+					resource.TestCheckTypeSetElemAttr("privx_role.test", "permissions.*", "users-view"),
+					resource.TestCheckResourceAttr("privx_role.test", "permit_agent", "false"),
+					resource.TestCheckResourceAttrSet("privx_role.test", "id"),
+				),
+			},
+			{
+				Config: cfgUpdate,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("privx_role.test", "name", roleName),
+					resource.TestCheckResourceAttr("privx_role.test", "comment", "updated by acceptance test"),
+					resource.TestCheckResourceAttr("privx_role.test", "permissions.#", "1"),
+					resource.TestCheckTypeSetElemAttr("privx_role.test", "permissions.*", "roles-view"),
+					resource.TestCheckResourceAttr("privx_role.test", "permit_agent", "true"),
+					resource.TestCheckResourceAttrSet("privx_role.test", "id"),
+				),
+			},
+		},
+	})
+}
+
 func testAccRoleWithAccessGroupConfig(groupName, roleName string) string {
 	return fmt.Sprintf(`
 terraform {
@@ -96,6 +142,40 @@ resource "privx_role" "test" {
 
   permissions  = ["users-view"]
   permit_agent = false
+
+  source_rules = jsonencode({
+    type  = "GROUP"
+    match = "ANY"
+    rules = []
+  })
+}
+`, groupName, roleName)
+}
+
+func testAccRoleWithAccessGroupUpdateConfig(groupName, roleName string) string {
+	return fmt.Sprintf(`
+terraform {
+  required_providers {
+    privx = {
+      source = "hashicorp/privx"
+    }
+  }
+}
+
+provider "privx" {}
+
+resource "privx_access_group" "foo" {
+  name    = %q
+  comment = "temp access group for role resource test"
+}
+
+resource "privx_role" "test" {
+  name            = %q
+  comment         = "updated by acceptance test"
+  access_group_id = privx_access_group.foo.id
+
+  permissions  = ["roles-view"]
+  permit_agent = true
 
   source_rules = jsonencode({
     type  = "GROUP"

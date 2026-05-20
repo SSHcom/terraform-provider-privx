@@ -238,32 +238,33 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	// generate the principal key for the role (using the role ID)
-	principalKeyID, err := r.client.CreatePrincipalKey(roleID.ID)
-
-	// Get role public key into state.
-	// PrivX takes some time to generate them.
 	publicKeyData := []string{}
-	timeout := 12 * time.Second
-	startTime := time.Now()
-	for {
-		principalKeyRead, err := r.client.GetPrincipalKey(roleID.ID, principalKeyID.ID)
+	principalKeyID, err := r.client.CreatePrincipalKey(roleID.ID)
+	if err != nil {
+		tflog.Warn(ctx, fmt.Sprintf("Unable to create the principal key for role %s: %s", roleID.ID, err))
+	} else {
+		// Get role public key into state. PrivX takes some time to generate it.
+		timeout := 12 * time.Second
+		startTime := time.Now()
+		for {
+			principalKeyRead, err := r.client.GetPrincipalKey(roleID.ID, principalKeyID.ID)
 
-		if err != nil {
-			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read the principal key, got error: %s", err))
-			return
-		}
+			if err != nil {
+				tflog.Warn(ctx, fmt.Sprintf("Unable to read the principal key %s for role %s: %s", principalKeyID.ID, roleID.ID, err))
+				break
+			}
 
-		if strings.Contains(principalKeyRead.PublicKey, "ssh-rsa ") {
-			publicKeyData = append(publicKeyData, principalKeyRead.PublicKey)
-			break
+			if strings.Contains(principalKeyRead.PublicKey, "ssh-rsa ") {
+				publicKeyData = append(publicKeyData, principalKeyRead.PublicKey)
+				break
+			}
+			if time.Since(startTime) > timeout {
+				tflog.Debug(ctx, "timeout reached")
+				break
+			}
+			time.Sleep(time.Second)
+			tflog.Debug(ctx, fmt.Sprintf("Waiting for public keys to be generated (%s timeout)", timeout))
 		}
-		if time.Since(startTime) > timeout {
-			tflog.Debug(ctx, "timeout reached")
-			break
-		}
-		time.Sleep(time.Second)
-		tflog.Debug(ctx, fmt.Sprintf("Waiting for public keys to be generated (%s timeout)", timeout))
 	}
 	publicKey, diags := types.SetValueFrom(ctx, data.PublicKey.ElementType(ctx), publicKeyData)
 	if diags.HasError() {
@@ -271,15 +272,6 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 	data.PublicKey = publicKey
 	data.ID = types.StringValue(roleID.ID)
-
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to Create Resource",
-			"An unexpected error occurred while attempting to create the resource.\n"+
-				err.Error(),
-		)
-		return
-	}
 	tflog.Debug(ctx, "created role resource")
 
 	// Save data into Terraform state
