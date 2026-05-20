@@ -1,3 +1,25 @@
+## 1.43.0 (Released)
+
+Tested against PrivX 43.
+
+### Improvements
+- Role resource: gracefully handle principal key creation failures with a warning instead of aborting the entire resource creation
+- Workflow resource: automatically remove from Terraform state when deleted out-of-band (not-found handling)
+- Whitelist resource: use shared `IsPrivxNotFound` utility for consistent not-found detection
+
+### Bug Fixes
+- Fixed potential crash in role resource when `CreatePrincipalKey` returns an error before the key ID is available
+
+### Tests
+- Added `TestAccRoleResource_basicCreateUpdateDelete` acceptance test covering full create → update → delete lifecycle (comment, permissions, permit_agent)
+- Acceptance test list now references individual role test cases
+
+### Build & Development
+- Updated Go module dependencies (golang.org/x/crypto v0.46.0, grpc v1.79.3, protobuf v1.36.10, opentelemetry v1.39.0, and others)
+- Fixed `mermaid-cli` Nix package reference in shell.nix
+
+---
+
 ## 1.42.0 (Released)
 
 ### Features

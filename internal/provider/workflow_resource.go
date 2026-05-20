@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"terraform-provider-privx/internal/utils"
+
 	"github.com/SSHcom/privx-sdk-go/v2/api/workflow"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
@@ -382,6 +384,10 @@ func (r *WorkflowResource) Read(ctx context.Context, req resource.ReadRequest, r
 
 	workflowData, err := r.client.GetWorkflow(data.ID.ValueString())
 	if err != nil {
+		if utils.IsPrivxNotFound(err) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read workflow, got error: %s", err))
 		return
 	}

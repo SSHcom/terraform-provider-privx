@@ -194,7 +194,7 @@ func (r *WhitelistResource) Read(ctx context.Context, req resource.ReadRequest, 
 	// Get whitelist from API
 	whitelist, err := r.client.GetWhitelist(data.ID.ValueString())
 	if err != nil {
-		if isNotFoundError(err) {
+		if utils.IsPrivxNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}

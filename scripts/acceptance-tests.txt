@@ -17,4 +17,5 @@ TestAccWhitelistResource
 TestAccNetworkTargetResource
 TestAccLocalUserResource
 TestAccRoleDataSource
-TestAccRoleResource
+TestAccRoleResource_recreateAfterOutOfBandDelete
+TestAccRoleResource_basicCreateUpdateDelete
