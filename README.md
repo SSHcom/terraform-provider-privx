@@ -174,3 +174,7 @@ Refer to [Development instructions](docs/manual/DEVELOPMENT.md)
 ### Reporting Issues
 
 Please report bugs and feature requests through [GitHub Issues](https://github.com/SSHcom/terraform-provider-privx/issues).
+
+
+## Support & Commercial Services
+This is a public open-source project licensed under Apache 2.0 and not covered by standard support SLA. Community feedback and contributions are welcome. Support is provided on a best-effort basis only. For dedicated support, customisations, or enterprise assistance, please raise a ticket via our support portal ( http://care.ssh.com) or via your local support partner. Any requests would be assigned to your account manager.
