@@ -88,6 +88,7 @@ func (r *RoleResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 					setvalidator.ValueStringsAre(
 						stringvalidator.OneOf(
 							"access-groups-manage",
+							"access-roles-manage",
 							"api-clients-manage",
 							"authorized-keys-manage",
 							"certificates-view",

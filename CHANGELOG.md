@@ -1,3 +1,10 @@
+## 1.44.0 (Released)
+
+Tested against PrivX 44.
+
+### Features
+- Added `access-roles-manage` permission to role resource, introduced in PrivX 44
+
 ## 1.43.0 (Released)
 
 Tested against PrivX 43.
