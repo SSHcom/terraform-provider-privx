@@ -124,7 +124,7 @@ func testAccRoleWithAccessGroupConfig(groupName, roleName string) string {
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }
@@ -157,7 +157,7 @@ func testAccRoleWithAccessGroupUpdateConfig(groupName, roleName string) string {
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }

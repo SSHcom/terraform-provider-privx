@@ -55,11 +55,11 @@ func (p *privxProvider) Schema(ctx context.Context, req provider.SchemaRequest, 
 				Sensitive:           true,
 			},
 			"api_client_id": schema.StringAttribute{
-				MarkdownDescription: "PrivX API OAuth client ID",
+				MarkdownDescription: "PrivX API client ID",
 				Optional:            true,
 			},
 			"api_client_secret": schema.StringAttribute{
-				MarkdownDescription: "PrivX API OAuth client ID",
+				MarkdownDescription: "PrivX API client secret",
 				Optional:            true,
 				Sensitive:           true,
 			},
@@ -133,7 +133,7 @@ func (p *privxProvider) Configure(ctx context.Context, req provider.ConfigureReq
 			path.Root("api_oauth_client_id"),
 			"Unknown PrivX API OAuth client ID",
 			"The provider cannot create the PrivX API client as there is an unknown configuration value for the PrivX API OAuth client ID. "+
-				"Either target apply the source of the value first, set the value statically in the configuration, or use the PRIVX_API_OAUTH_ID environment variable.",
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the PRIVX_API_OAUTH_CLIENT_ID environment variable.",
 		)
 	}
 
@@ -142,7 +142,7 @@ func (p *privxProvider) Configure(ctx context.Context, req provider.ConfigureReq
 			path.Root("api_oauth_client_secret"),
 			"Unknown PrivX OAuth client secret",
 			"The provider cannot create the PrivX API client as there is an unknown configuration value for the PrivX API OAuth client secret. "+
-				"Either target apply the source of the value first, set the value statically in the configuration, or use the PRIVX_API_OAUTH_SECRET environment variable.",
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the PRIVX_API_OAUTH_CLIENT_SECRET environment variable.",
 		)
 	}
 
@@ -224,7 +224,7 @@ func (p *privxProvider) Configure(ctx context.Context, req provider.ConfigureReq
 				path.Root("api_oauth_client_id"),
 				"Missing PrivX OAuth client ID",
 				"The provider cannot create the PrivX API client as there is a missing or empty value for the PrivX OAuth client ID. "+
-					"Set the username value in the configuration or use the PRIVX_API_OAUTH_ID environment variable. "+
+					"Set the username value in the configuration or use the PRIVX_API_OAUTH_CLIENT_ID environment variable. "+
 					"If either is already set, ensure the value is not empty.",
 			)
 		}
@@ -234,7 +234,7 @@ func (p *privxProvider) Configure(ctx context.Context, req provider.ConfigureReq
 				path.Root("api_oauth_client_secret"),
 				"Missing PrivX API client secret",
 				"The provider cannot create the PrivX API client as there is a missing or empty value for the PrivX OAuth client secret. "+
-					"Set the password value in the configuration or use the PRIVX_API_OAUTH_SECRET environment variable. "+
+					"Set the password value in the configuration or use the PRIVX_API_OAUTH_CLIENT_SECRET environment variable. "+
 					"If either is already set, ensure the value is not empty.",
 			)
 		}
@@ -245,15 +245,12 @@ func (p *privxProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
+	// Only non-sensitive fields are added to the log context. Secrets
+	// (api_bearer_token, api_client_secret, api_oauth_client_secret) are
+	// intentionally never logged to avoid leaking credentials into logs.
 	ctx = tflog.SetField(ctx, "api_base_url", apiBaseURL)
-	ctx = tflog.SetField(ctx, "api_bearer_token", apiBearerToken)
 	ctx = tflog.SetField(ctx, "api_client_id", apiClientID)
-	ctx = tflog.SetField(ctx, "api_client_secret", apiClientSecret)
 	ctx = tflog.SetField(ctx, "api_oauth_client_id", oauthClientID)
-	ctx = tflog.SetField(ctx, "api_oauth_client_secret", oauthClientSecret)
-	//	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "api_client_secret")
-	//	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "api_oauth_client_secret")
-	//	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "api_bearer_token")
 
 	tflog.Debug(ctx, "Creating PrivX client")
 
@@ -311,6 +308,8 @@ func (p *privxProvider) DataSources(ctx context.Context) []func() datasource.Dat
 		NewWorkflowDataSource,
 		NewWhitelistDataSource,
 		NewCarrierDataSource,
+		NewHostDataSource,
+		NewCACertificateDataSource,
 	}
 }
 

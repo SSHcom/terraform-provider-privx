@@ -61,7 +61,7 @@ func testAccLocalUserInitialPassword(username, password string) string {
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }
@@ -84,7 +84,7 @@ func testAccLocalUserRotatedPassword(username, rotatedPassword string) string {
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }

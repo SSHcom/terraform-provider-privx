@@ -69,4 +69,4 @@ jobs:
       uses: golangci/golangci-lint-action@v9
       with:
         install-mode: "goinstall"
-        args: --timeout=5m --no-config --tests=false
+        args: --timeout=5m

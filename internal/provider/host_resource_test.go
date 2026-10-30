@@ -143,7 +143,7 @@ func testAccHostPasswordRotationConfig_step1_withExternalID(externalID, hostIP, 
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }
@@ -206,7 +206,7 @@ func testAccHostPasswordRotationConfig_step2_omitExternalID_changeComment(hostIP
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }
