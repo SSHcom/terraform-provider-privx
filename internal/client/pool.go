@@ -7,7 +7,7 @@ import (
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
 )
 
-// ConnectionPool manages PrivX API connections to avoid authentication races
+// ConnectionPool manages PrivX API connections to avoid authentication races.
 type ConnectionPool struct {
 	mu        sync.RWMutex
 	connector *restapi.Connector
@@ -29,7 +29,7 @@ var (
 	poolMu     sync.Mutex
 )
 
-// GetConnector returns a shared connector instance
+// GetConnector returns a shared connector instance.
 func GetConnector(config ConnectionConfig) (*restapi.Connector, error) {
 	poolMu.Lock()
 	defer poolMu.Unlock()

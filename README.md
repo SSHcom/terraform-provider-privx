@@ -93,12 +93,27 @@ The current version is based on:
 
 ### Basic Configuration
 
+When installing from the Terraform Registry, use the published source address:
+
+```hcl
+terraform {
+  required_providers {
+    privx = {
+      source  = "SSHcom/privx"
+      version = "1.42.0"
+    }
+  }
+}
+```
+
+When using the locally built provider from the steps above, point `source` at the
+local mirror instead:
+
 ```hcl
 terraform {
   required_providers {
     privx = {
       source  = "local.terraform.com/local/privx"
-      #source = "sshcom/privx"
       version = "1.42.0"
     }
   }

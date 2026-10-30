@@ -27,7 +27,7 @@ tasks:
   doc:
     desc: Generate documentation
     cmds:
-      - tfplugindocs generate -provider-name terraform-provider-privx  rendered-website-dir docs
+      - tfplugindocs generate --provider-name terraform-provider-privx --rendered-website-dir docs
       - ./scripts/convert-diagrams.sh docs/manual/diagrams/*.mmd
 
   dep:

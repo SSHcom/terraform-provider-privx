@@ -68,5 +68,10 @@ jobs:
     - name: Run linters
       uses: golangci/golangci-lint-action@v9
       with:
-        install-mode: "goinstall"
-        args: --timeout=5m --no-config --tests=false
+        # Use a pinned, prebuilt release binary instead of "goinstall".
+        # goinstall compiles golangci-lint from source with the repo's Go
+        # version; recent releases (v2.9.0+) require Go >= 1.26, which fails
+        # against this module's Go 1.25. Prebuilt release binaries are built
+        # with Go 1.25 and avoid that constraint.
+        version: v2.5.0
+        args: --timeout=5m

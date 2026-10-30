@@ -67,7 +67,7 @@ func testAccAPIClientWithRoleConfig(roleName, apiClientName string, groupName st
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }

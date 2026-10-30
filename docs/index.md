@@ -31,8 +31,8 @@ provider "privx" {
 
 - `api_base_url` (String) PrivX API Base URL
 - `api_bearer_token` (String, Sensitive) PrivX bearer token
-- `api_client_id` (String) PrivX API OAuth client ID
-- `api_client_secret` (String, Sensitive) PrivX API OAuth client ID
+- `api_client_id` (String) PrivX API client ID
+- `api_client_secret` (String, Sensitive) PrivX API client secret
 - `api_oauth_client_id` (String) PrivX API OAuth client ID
 - `api_oauth_client_secret` (String, Sensitive) Privx API OAuth Client Secret
 - `debug` (Boolean) PrivX debug mode
