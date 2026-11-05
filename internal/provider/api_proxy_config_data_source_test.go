@@ -79,7 +79,7 @@ func testAccApiProxyConfigDataSourceConfig() string {
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }

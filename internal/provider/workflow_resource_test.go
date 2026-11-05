@@ -119,7 +119,7 @@ func testAccWorkflowConfigByRoleNames(
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }

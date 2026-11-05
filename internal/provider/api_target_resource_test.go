@@ -159,7 +159,7 @@ func testAccApiTargetConfig(roleName, accGroupName, apiTargetName, comment strin
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }

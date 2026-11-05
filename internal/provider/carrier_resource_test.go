@@ -144,7 +144,7 @@ func testAccCarrierConfigWithAccessGroup(carrierName string, routingPrefix, webP
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }
@@ -174,7 +174,7 @@ func testAccCarrierConfigOmitSubnets(carrierName, routingPrefix, webProxyAddress
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }

@@ -12,7 +12,7 @@ This provider is intended for teams who want Infrastructure as Code (IaC) contro
 terraform {
   required_providers {
     privx = {
-      source  = "hashicorp/privx"
+      source  = "SSHcom/privx"
       version = "~> 1.42.0"
     }
   }

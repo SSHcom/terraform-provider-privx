@@ -87,7 +87,7 @@ func testAccApiProxyCredentialConfig(testAPIHost, apiTargetName, username, passw
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }

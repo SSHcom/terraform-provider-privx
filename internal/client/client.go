@@ -23,7 +23,9 @@ func authorize(apiBaseURL, bearerToken, apiClientID, apiClientSecret, oauthClien
 }
 
 func NewConnector(apiBaseURL, bearerToken, apiClientID, apiClientSecret, oauthClientID, oauthClientSecret string) (*restapi.Connector, error) {
-	log.Println("Creating PrivX client", "apiBaseURL", apiBaseURL, "bearerToken", bearerToken, "apiClientID", apiClientID, "apiClientSecret", apiClientSecret, "oauthClientID", oauthClientID, "oauthClientSecret", oauthClientSecret)
+	// Do not log secret values (bearer token, client secret, OAuth client
+	// secret). Only non-sensitive identifiers are logged.
+	log.Println("Creating PrivX client", "apiBaseURL", apiBaseURL, "apiClientID", apiClientID, "oauthClientID", oauthClientID)
 
 	auth := authorize(apiBaseURL, bearerToken, apiClientID, apiClientSecret, oauthClientID, oauthClientSecret)
 	_, err := auth.AccessToken()

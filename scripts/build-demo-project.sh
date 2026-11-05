@@ -36,7 +36,7 @@ cat > "$DEMO_DIR/versions.tf" <<'EOF'
 terraform {
   required_providers {
     privx = {
-      source = "registry.terraform.io/hashicorp/privx"
+      source = "registry.terraform.io/SSHcom/privx"
     }
   }
 }

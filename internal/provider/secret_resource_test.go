@@ -63,7 +63,7 @@ func testAccSecretConfigCreate(secretName, password string) string {
 terraform {
   required_providers {
     privx = {
-      source = "hashicorp/privx"
+      source = "SSHcom/privx"
     }
   }
 }

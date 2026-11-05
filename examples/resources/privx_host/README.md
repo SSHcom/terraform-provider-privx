@@ -115,9 +115,52 @@ command_restrictions {
 4. **Service Accounts**: Use more restrictive settings for automated accounts
 5. **Role-based Access**: Assign different permissions based on user roles
 
-## Limitations
+## Password Rotation
 
-- **Password Rotation**: Password rotation functionality is not currently implemented in this host resource. While the `password_rotation_enabled` field and related configuration options are available in the schema, the actual password rotation logic is not functional.
+Password rotation is fully supported. Set `password_rotation_enabled = true` and
+provide a `password_rotation` block. When enabled, the block requires:
+
+- `use_main_account`
+- `operating_system`
+- `protocol`
+- `password_policy_id`
+- `script_template_id`
+
+Mark the service and principal used for rotation with
+`use_for_password_rotation = true`.
+
+```hcl
+resource "privx_host" "rotated" {
+  common_name     = "db-host"
+  addresses       = ["192.0.2.10"]
+  access_group_id = data.privx_access_group.ag.id
+
+  services = [{
+    service                   = "SSH"
+    address                   = "192.0.2.10"
+    port                      = 22
+    use_for_password_rotation = true
+  }]
+
+  password_rotation_enabled = true
+
+  password_rotation = {
+    access_group_id                = data.privx_access_group.ag.id
+    use_main_account               = true
+    operating_system               = "LINUX"
+    protocol                       = "SSH"
+    certificate_validation_options = "DISABLED"
+    password_policy_id             = data.privx_password_policy.pp.id
+    script_template_id             = data.privx_script_template.st.id
+  }
+
+  principals = [{
+    principal                 = "rotate-user"
+    rotate                    = true
+    use_for_password_rotation = true
+  }]
+}
+```
 
 ## Notes
 

@@ -30,7 +30,6 @@ OAUTH_CLIENT_ID="${PRIVX_API_OAUTH_CLIENT_ID:-}"
 OAUTH_SECRET="${PRIVX_API_OAUTH_CLIENT_SECRET:-}"
 CLIENT_ID="${PRIVX_API_CLIENT_ID:-}"
 CLIENT_SECRET="${PRIVX_API_CLIENT_SECRET:-}"
-TRUST_ANCHOR="${TRUST_ANCHOR:-}"
 
 # Create output directory if it doesn't exist
 mkdir -p "$(dirname "$OUTPUT_FILE")"
@@ -46,19 +45,6 @@ provider "privx" {
   api_client_id           = "${CLIENT_ID}"
   api_client_secret       = "${CLIENT_SECRET}"
   debug                   = false
-EOF
-
-if [ -n "$TRUST_ANCHOR" ]; then
-  cat >> "$OUTPUT_FILE" <<EOF
-
-  # Optional TLS trust anchor certificate (PEM) for PrivX API server
-  trust_anchor = <<CERT_EOF
-${TRUST_ANCHOR}
-CERT_EOF
-EOF
-fi
-
-cat >> "$OUTPUT_FILE" <<EOF
 }
 EOF
 

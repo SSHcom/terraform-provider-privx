@@ -5,22 +5,23 @@ resource "privx_host" "test" {
   source_id       = "test-source-id"
   access_group_id = "test-access-group-id"
 
-  services {
+  services = [{
     service = "SSH"
     address = "192.168.1.100"
     port    = 22
     source  = "UI"
-  }
+  }]
 
-  principals {
+  principals = [{
     principal = "testuser"
     source    = "UI"
-    
-    roles {
+
+    roles = [{
       id   = "test-role-id"
       name = "Test Role"
-    }
-  }
+    }]
+  }]
+
   tags = ["test", "terraform"]
 }
 
@@ -31,25 +32,25 @@ resource "privx_host" "test_with_options" {
   source_id       = "test-source-id"
   access_group_id = "test-access-group-id"
 
-  services {
+  services = [{
     service = "SSH"
     address = "192.168.1.101"
     port    = 22
     source  = "UI"
-  }
+  }]
 
-  principals {
+  principals = [{
     principal = "testuser"
     source    = "UI"
-    
-    roles {
+
+    roles = [{
       id   = "test-role-id"
       name = "Test Role"
-    }
+    }]
 
     # Basic service options configuration
-    service_options {
-      ssh {
+    service_options = {
+      ssh = {
         shell         = true
         file_transfer = true
         exec          = true
@@ -60,11 +61,11 @@ resource "privx_host" "test_with_options" {
     }
 
     # Basic command restrictions (disabled)
-    command_restrictions {
+    command_restrictions = {
       enabled = false
     }
-  }
-  
+  }]
+
   tags = ["test", "terraform", "service-options"]
 }
 

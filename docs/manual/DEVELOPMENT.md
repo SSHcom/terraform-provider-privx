@@ -109,15 +109,16 @@ When tests run, the HCL configurations used for each step are persisted to `inte
 
 ## CI pipeline / GitHub Actions Configuration
 
-To enable automated acceptance testing in GitHub Actions, you must configure the following **Repository Secrets** (Settings > Secrets and variables > Actions):
+This public repository runs build, format, `go vet`, and lint checks on every pull
+request and push (see [`.github/workflows/test.yml`](../../.github/workflows/test.yml)).
 
-1.  **Secret Names:** Ensure the secret names exactly match those expected by the workflow:
-    *   `PRIVX_API_BASE_URL`
-    *   `PRIVX_API_OAUTH_CLIENT_ID`
-    *   `PRIVX_API_OAUTH_CLIENT_SECRET`
-    *   `PRIVX_API_CLIENT_ID`
-    *   `PRIVX_API_CLIENT_SECRET`
+Acceptance tests are **not** run from this repository. They require a live PrivX
+instance and credentials, and are maintained and executed from a separate private
+repository. To run them locally, see the acceptance testing instructions above and
+provide the following environment variables (via your `.env` file):
 
-2.  **Environment Connectivity:** The GitHub runner must be able to reach your PrivX instance at the URL specified in `PRIVX_API_BASE_URL`.
-    
-3.  **Github workflow example:** The [acceptance-tests](../../.github/workflows/acceptance-tests.yml) workflow.
+*   `PRIVX_API_BASE_URL`
+*   `PRIVX_API_OAUTH_CLIENT_ID`
+*   `PRIVX_API_OAUTH_CLIENT_SECRET`
+*   `PRIVX_API_CLIENT_ID`
+*   `PRIVX_API_CLIENT_SECRET`
