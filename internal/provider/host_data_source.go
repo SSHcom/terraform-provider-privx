@@ -6,8 +6,10 @@ import (
 
 	"github.com/SSHcom/privx-sdk-go/v2/api/hoststore"
 	"github.com/SSHcom/privx-sdk-go/v2/restapi"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
@@ -612,5 +614,114 @@ func (d *HostDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		"common_name": host.CommonName,
 	})
 
+	d.populateModel(ctx, &data, host, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// hostDataSourceServiceModel matches the nested "services" schema of the data source.
+type hostDataSourceServiceModel struct {
+	Service                types.String `tfsdk:"service"`
+	Address                types.String `tfsdk:"address"`
+	Port                   types.Int64  `tfsdk:"port"`
+	UseForPasswordRotation types.Bool   `tfsdk:"use_for_password_rotation"`
+	SSHTunnelPort          types.Int64  `tfsdk:"ssh_tunnel_port"`
+	UsePlaintextVNC        types.Bool   `tfsdk:"use_plaintext_vnc"`
+	Source                 types.String `tfsdk:"source"`
+	Status                 types.String `tfsdk:"status"`
+	StatusUpdated          types.String `tfsdk:"status_updated"`
+}
+
+// listElemType returns the element type of a list-nested attribute in this data source's schema.
+func (d *HostDataSource) listElemType(ctx context.Context, name string) (attr.Type, error) {
+	var sresp datasource.SchemaResponse
+	d.Schema(ctx, datasource.SchemaRequest{}, &sresp)
+
+	a, ok := sresp.Schema.Attributes[name]
+	if !ok {
+		return nil, fmt.Errorf("attribute %q not found in schema", name)
+	}
+	lt, ok := a.GetType().(types.ListType)
+	if !ok {
+		return nil, fmt.Errorf("attribute %q is not a list", name)
+	}
+	return lt.ElemType, nil
+}
+
+// populateModel copies the API host into the data source model.
+func (d *HostDataSource) populateModel(ctx context.Context, data *HostDataSourceModel, host *hoststore.Host, diags *diag.Diagnostics) {
+	// Reuse the resource mapping for the shared nested structures.
+	var rm HostResourceModel
+	(&HostResource{}).populateHostModel(ctx, &rm, host)
+
+	data.ID = types.StringValue(host.ID)
+	data.CommonName = rm.CommonName
+	data.Addresses = rm.Addresses
+	data.ExternalID = rm.ExternalID
+	data.InstanceID = rm.InstanceID
+	data.SourceID = rm.SourceID
+	data.AccessGroupID = rm.AccessGroupID
+	data.CloudProvider = rm.CloudProvider
+	data.CloudProviderRegion = rm.CloudProviderRegion
+	data.DistinguishedName = rm.DistinguishedName
+	data.Organization = rm.Organization
+	data.OrganizationalUnit = rm.OrganizationalUnit
+	data.Zone = rm.Zone
+	data.HostType = rm.HostType
+	data.HostClassification = rm.HostClassification
+	data.Comment = rm.Comment
+	data.UserMessage = rm.UserMessage
+	data.Disabled = rm.Disabled
+	data.Deployable = rm.Deployable
+	data.Tofu = rm.Tofu
+	data.Toch = rm.Toch
+	data.AuditEnabled = rm.AuditEnabled
+	data.PasswordRotationEnabled = rm.PasswordRotationEnabled
+	data.ContactAddress = rm.ContactAddress
+	data.Tags = rm.Tags
+	data.SSHHostPublicKeys = rm.SSHHostPublicKeys
+	data.SessionRecordingOptions = rm.SessionRecordingOptions
+	data.Created = rm.Created
+	data.Updated = rm.Updated
+	data.UpdatedBy = rm.UpdatedBy
+
+	// Services (the data source also exposes health check status).
+	services := make([]hostDataSourceServiceModel, len(host.Services))
+	for i, s := range host.Services {
+		services[i] = hostDataSourceServiceModel{
+			Service:                types.StringValue(s.Service),
+			Address:                types.StringValue(s.Address),
+			Port:                   types.Int64Value(int64(s.Port)),
+			UseForPasswordRotation: types.BoolValue(s.UseForPasswordRotation),
+			SSHTunnelPort:          types.Int64Value(int64(s.TunnelPort)),
+			UsePlaintextVNC:        types.BoolValue(s.UsePlainTextVNC),
+			Source:                 types.StringValue(s.Source),
+			Status:                 types.StringValue(s.HealthCheckStatus),
+			StatusUpdated:          types.StringValue(s.HealthCheckStatusUpdated),
+		}
+	}
+	serviceType, err := d.listElemType(ctx, "services")
+	if err != nil {
+		diags.AddError("Internal Error", err.Error())
+		return
+	}
+	svcList, svcDiags := types.ListValueFrom(ctx, serviceType, services)
+	diags.Append(svcDiags...)
+	data.Services = svcList
+
+	// Principals. The API returns the passphrase masked, so never expose it.
+	for i := range rm.Principals {
+		rm.Principals[i].Passphrase = types.StringNull()
+	}
+	principalType, err := d.listElemType(ctx, "principals")
+	if err != nil {
+		diags.AddError("Internal Error", err.Error())
+		return
+	}
+	prList, prDiags := types.ListValueFrom(ctx, principalType, rm.Principals)
+	diags.Append(prDiags...)
+	data.Principals = prList
 }

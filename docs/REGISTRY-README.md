@@ -13,7 +13,7 @@ terraform {
   required_providers {
     privx = {
       source  = "SSHcom/privx"
-      version = "~> 1.42.0"
+      version = "~> 1.45.1"
     }
   }
 }

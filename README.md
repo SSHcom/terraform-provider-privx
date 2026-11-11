@@ -64,9 +64,26 @@ The current version is based on:
 
 ## How to Use the Provider
 
-**Note:** This provider will soon be published to the Terraform Registry. For now, you need to clone the repository and build it locally.
+### Install from the Terraform Registry
+
+Add the provider to your Terraform configuration:
+
+```hcl
+terraform {
+  required_providers {
+    privx = {
+      source  = "SSHcom/privx"
+      version = "1.45.1"
+    }
+  }
+}
+```
+
+Then run `terraform init`. Configure the provider as described in [Basic Configuration](#basic-configuration).
 
 ### Local Build and Installation
+
+Building locally is only needed for development or to test unreleased changes.
 
 1. Clone the repository:
    ```bash
@@ -76,55 +93,46 @@ The current version is based on:
 
 2. Build the provider:
    ```bash
-   go build -o terraform-provider-privx_v1.42.0
+   go build -o terraform-provider-privx_v1.45.1
    ```
 
 3. Create the local provider directory:
    ```bash
-   mkdir -p <terraform_code_dir>/.terraform/providers/local.terraform.com/local/privx/1.42.0/darwin_arm64/
+   mkdir -p <terraform_code_dir>/.terraform/providers/local.terraform.com/local/privx/1.45.1/darwin_arm64/
    ```
    
    Note: Replace `darwin_amd64` with your platform (e.g., `linux_amd64`, `windows_amd64`)
 
 4. Copy the built provider:
    ```bash
-   cp terraform-provider-privx_v1.42.0 <terraform_code_dir>/.terraform/providers/local.terraform.com/local/privx/1.42.0/darwin_arm64/
+   cp terraform-provider-privx_v1.45.1 <terraform_code_dir>/.terraform/providers/local.terraform.com/local/privx/1.45.1/darwin_arm64/
    ```
 
 ### Basic Configuration
 
-When installing from the Terraform Registry, use the published source address:
+Use the `required_providers` block from [Install from the Terraform Registry](#install-from-the-terraform-registry), then configure the provider:
 
 ```hcl
-terraform {
-  required_providers {
-    privx = {
-      source  = "SSHcom/privx"
-      version = "1.42.0"
-    }
-  }
+provider "privx" {
+  api_base_url            = "https://your-privx-instance.com"
+  api_client_id           = "your-client-id"
+  api_client_secret       = "your-client-secret"
+  api_oauth_client_id     = "your-oauth-client-id"
+  api_oauth_client_secret = "your-oauth-client-secret"
 }
 ```
 
-When using the locally built provider from the steps above, point `source` at the
-local mirror instead:
+If you are using the locally built provider from the steps above, use the local mirror
+as the `source` instead:
 
 ```hcl
 terraform {
   required_providers {
     privx = {
       source  = "local.terraform.com/local/privx"
-      version = "1.42.0"
+      version = "1.45.1"
     }
   }
-}
-
-provider "privx" {
-  api_base_url         = "https://your-privx-instance.com"
-  api_client_id        = "your-client-id"
-  api_client_secret    = "your-client-secret"
-  api_oauth_client_id  = "your-oauth-client-id"
-  api_oauth_client_secret = "your-oauth-client-secret"
 }
 ```
 

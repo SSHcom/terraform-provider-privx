@@ -1,3 +1,60 @@
+## 1.45.1 (Released)
+
+Tested against PrivX 45.
+
+### Bug Fixes
+- `privx_host` data source now populates `id` and all other attributes (addresses, tags, services, principals, SSH host public keys, session recording options, timestamps). In 1.45.0 the data source was registered but returned empty state, so `id` was never set. Principal `passphrase` is always null because the API returns it masked.
+
+### Tests
+- Added `TestHostDataSource_populateModel`, a unit test that maps an API host through the real data source schema without needing a live PrivX.
+
+## 1.45.0 (Released)
+
+Tested against PrivX 45.
+
+### Security
+- Stopped logging API secrets. `api_client_secret`, `api_oauth_client_secret` and `api_bearer_token` were added to the Terraform log context in the provider, and also printed by an unconditional `log.Println` in the client. Credentials could appear in logs at `TF_LOG=INFO` or higher, or without `TF_LOG` at all in the client case. If you ran with debug logging enabled on earlier versions, consider rotating those credentials.
+
+### Features
+- Added data source `privx_ca_certificate`, which exposes the PrivX authorizer CA certificates and public keys. It can be used to detect CA rotation.
+- Registered the `privx_host` data source (it was implemented but not registered). Note: it returned empty state in this release; fixed in 1.45.1.
+
+### Bug Fixes
+- Provider error messages now name the correct environment variables, `PRIVX_API_OAUTH_CLIENT_ID` and `PRIVX_API_OAUTH_CLIENT_SECRET`. They previously said `PRIVX_API_OAUTH_ID` and `PRIVX_API_OAUTH_SECRET`.
+- Corrected the `api_client_id` and `api_client_secret` provider attribute descriptions.
+
+### Breaking / Action Required
+- The provider source address is now `SSHcom/privx` (`registry.terraform.io/SSHcom/privx`). The previous `hashicorp/privx` address was incorrect. Update `required_providers`:
+  ```hcl
+  terraform {
+    required_providers {
+      privx = {
+        source  = "SSHcom/privx"
+        version = "~> 1.45.0"
+      }
+    }
+  }
+  ```
+
+### Documentation
+- Fixed `examples/resources/privx_host/basic.tf`, which used removed block syntax. It now uses list attributes.
+- Corrected the host example README, which claimed password rotation was not implemented.
+- Removed the `privx_license` examples, which had no backing implementation.
+- Standardized the provider source address across the README, registry README and docs.
+- Regenerated provider documentation.
+
+### Build & Development
+- CI lint now uses the repository `.golangci.yaml` instead of `--no-config`; the config was migrated to the golangci-lint v2 schema.
+- Pinned golangci-lint to the prebuilt `v2.5.0` binary (`goinstall @latest` failed against Go 1.25).
+- Fixed the `task doc` flags (`--provider-name`, `--rendered-website-dir`).
+- Removed the unsupported `trust_anchor` option from `scripts/generate-provider-tf.sh`.
+- Removed the reference to a non-existent acceptance-tests workflow from `DEVELOPMENT.md`. Acceptance tests run from a separate private repository.
+
+### Tests
+- Added acceptance tests for the `privx_host` and `privx_ca_certificate` data sources.
+
+---
+
 ## 1.44.0 (Released)
 
 Tested against PrivX 44.
